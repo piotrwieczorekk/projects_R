@@ -1,1 +1,1 @@
---- IMPORTANT --- the whole executed code can be seen via html: https://piotrwieczorekk.github.io/projects_R/non_parametric_test/non_parametric_tests alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
+--- IMPORTANT --- the whole executed code can be seen via html: https://piotrwieczorekk.github.io/projects_R/non_parametric_tests/non_parametric_tests alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
