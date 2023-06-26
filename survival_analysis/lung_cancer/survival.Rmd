@@ -1,0 +1,167 @@
+---
+title: "Survival Analysis"
+author: "Piotr Wieczorek"
+date: "2023-06-25"
+output: 
+  html_document: 
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+
+```{r}
+library(survminer)
+library(KMsurv)
+library(survival)
+library(tidyverse)
+library(png)
+```
+
+### We are going to work on the lung dataset from the survminer package
+
+### More about the dataset: https://stat.ethz.ch/R-manual/R-devel/library/survival/html/lung.html
+
+```{r}
+survival::lung
+```
+### Let's recode status to get the following: 1 = Death, 0 = Censored
+
+```{r}
+lung2 <- lung %>%
+  mutate(status = ifelse(status==1,0,1),
+         sex = ifelse(sex == 1,"male","female"),
+         sex=as.factor(sex))%>%
+  select(time,status,sex)
+```
+
+### Kaplan-Meier model
+```{r}
+km_model <- survfit(Surv(time,status)~sex,
+                    data=lung2)
+```
+
+```{r}
+head(km_model)
+```
+
+### Table picturing probability of surviving beyond certain time point for both genders
+```{r}
+summary(km_model)
+```
+
+### Additional information:
+<h4>1. For sex = male: There was 138 observations, 112 deaths (therefore 138-112=26 censored observations) and the median was 270 (half of the observations survived beyond that point, half of the observations did not survive to that point)</h4>
+<h4>2. For sex = female: There was 90 observations, 53 deaths (therefore 90-53 = 37 censored observations) and the median was 426 (half of the observations survived beyond that point, half of the observations did not survive to that point)</h4>
+```{r}
+survfit(Surv(time,status)~sex,
+                    data=lung2)
+```
+
+### Survival plot
+
+### Probability of surviving for sex = Male beyond certain time points seems to be lower than the probability of surviving for sex = Female beyond the same time points. P-value = 0.0013 from the log-rank test also suggests that survival depends on sex.
+```{r,fig.width=10,fig.height=6}
+ggsurvplot(km_model,
+           xlim=c(0,1100),
+           break.x.by=100,
+           pval=T,
+           risk.table=T,
+           xlab="Time Until an Event Occurs",
+           ylab="Probability of an Event Occuring at given time")
+```
+
+
+### COX Proportional Hazard Model
+
+### COX regression allows more independent variables (they can also be numeric). This model assumes that the hazard ratio remains constant over time and that the relation between ln(hazard) and numerical variables is linear.
+
+### Model equation: (h0(t) is the baseline hazard function) 
+```{r,fig.width=6,fig.height=1.5,fig.align='center'}
+ggplot() + 
+    background_image(readPNG("images/cox_equation.png"))
+```
+
+```{r}
+lung
+```
+
+```{r}
+lung3 <- lung %>%
+  mutate(status = ifelse(status==1,0,1),
+         sex = ifelse(sex == 1,"male","female"),
+         sex = as.factor(sex),
+         ph.ecog = as.factor(ph.ecog)) %>%
+  select(-meal.cal)
+```
+
+
+
+```{r}
+lung3 <- lung3 %>%
+  drop_na()
+```
+
+
+
+### At first, more variables were taken into the model but the concordance remained almost the same after removing variables with non-proportional hazard ratios (the highest condordance was at 66%, now it is 64.7% indicating that removed variables had very little effect on the concordance and above that they also violated the assumptions of the COX model)
+
+```{r}
+cox_mod <- coxph(Surv(time,status)~ sex  + ph.ecog,
+data=lung3)
+```
+
+
+
+```{r}
+cox_mod
+```
+
+```{r}
+summary(cox_mod)
+```
+
+### exp(coef) are interpreted as the hazard ratios:
+
+<h4>* If sex = male then the hazard is 1.76 times the hazard for sex = female</h4>
+<h4>* If ph.ecog = 1 then the hazard is 1.57 times the hazard for ph.ecog = 0</h4>
+<h4>* If ph.ecog = 2 then the hazard is 2.61 times the hazard for ph.ecog = 0</h4>
+<h4>* If ph.ecog = 3 then the hazard is 8.61 times the hazard for ph.ecog = 0</h4>
+
+### at 5% significane level there is no evidence to reject the H0 that the Hazard Ratio is proportional over time
+```{r}
+cox.zph(cox_mod)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
