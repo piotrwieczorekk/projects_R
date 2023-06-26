@@ -1,0 +1,339 @@
+---
+title: "Non parametric tests in R"
+author: "Piotr Wieczorek"
+date: "2023-06-14"
+output: 
+  html_document: 
+    theme: lumen
+    toc_depth: 2
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+
+## **Goal of this project**
+
+### The aim of this project is to demonstrate various non-parametric tests using the gapminder dataset as an example. Following tests will be conducted:
+<h3>1. the Wilcoxon Signed Rank test</h3>
+<h3>2. the Mann U-Whitney test (otherwise known as the Wilcoxon Sum Rank test)</h3>
+<h3>3. the Kruskal Wallis test (with post hoc Dunn's test)</h3>
+<h3>4. Friedman's ANOVA</h3>
+
+```{r}
+library(tidyverse)
+library(caret)
+library(rstatix)
+library(png)
+library(ggpubr)
+library(gapminder)
+```
+
+
+```{r}
+df <- gapminder
+```
+
+```{r}
+unique(df$year)
+```
+
+## **Wilcoxon test - 2 dependent groups**
+
+### HO: Median life expectancy in Europe in 2002 = Median life expectancy in Europe in 2007
+### Ha: Medians are not equal
+
+```{r}
+df1 <- df %>%
+  filter(year %in% c(2002,2007),
+         continent %in% c("Europe")) %>%
+  select(1,2,3,4)
+```
+
+```{r}
+head(df1)
+```
+```{r}
+df1 %>%
+  ggplot(aes(x=lifeExp))+
+  geom_density()
+```
+
+### LifeExp doesn't follow normal distribution
+
+```{r}
+shapiro.test(df1$lifeExp)
+```
+
+```{r}
+df1 <- df1%>%
+  mutate(year = as.factor(year))
+```
+
+
+```{r}
+df1 %>%
+  group_by(year) %>%
+  summarise(median_life_exp = median(lifeExp))
+```
+```{r}
+df1 %>%
+  ggplot(aes(x=year,y=lifeExp))+
+  geom_boxplot(outlier.shape = NA)+
+  geom_jitter()+
+  labs(title = "Life Expectancy in Europe in 2002 and 2007")
+```
+
+
+```{r}
+wilcox_test(data=df1,formula = lifeExp ~ year,paired = TRUE)
+```
+### Sum of all positive ranks = 0, meaning that each lifeExp in 2007 was higher than in 2002.
+
+
+
+### Conclusion: at p-value < 0.05 there is a proof to reject the null hypothesis.
+
+
+
+## **Mann U-Whitney test: 2 independent groups**
+
+### hypotheses:
+<h3>H0: Median life expectancy in Europe in 2007 = median life expectancy in Asia in 2007</h3>
+<h3>Ha: Medians are not equal</h3>
+
+```{r}
+df2 <- gapminder
+```
+
+```{r}
+df2<-df2 %>%
+  filter(continent %in% c("Europe","Asia"),
+         year == 2007) %>%
+  mutate(year=as.factor(year)) %>%
+  mutate(continent = as.factor(continent)) %>%
+  select(1,2,3,4)
+```
+
+
+
+```{r}
+levels(df2$year)
+```
+```{r}
+table(df2$continent)
+```
+```{r}
+df2$continent <- droplevels(df2$continent)
+```
+
+```{r}
+table(df2$continent)
+```
+
+```{r}
+df2 %>%
+  ggplot(aes(x=lifeExp))+
+  geom_density()+
+  facet_wrap(~continent,scales="free")
+```
+
+```{r}
+shapiro.test(df2[df2$continent=="Europe",]$lifeExp)
+```
+```{r}
+shapiro.test(df2[df2$continent=="Asia",]$lifeExp)
+```
+
+```{r}
+df2
+```
+
+
+
+```{r}
+df2 %>%
+  group_by(continent) %>%
+  summarise(median_life_exp = median(lifeExp))
+```
+
+### Mann-Whitney U statistic formula
+
+
+
+```{r,fig.width=5,fig.height=3}
+ggplot() + 
+    background_image(readPNG("images/mann.png"))
+```
+
+
+```{r}
+df2 %>%
+  ggplot(aes(x=continent,y=lifeExp))+
+  geom_boxplot(outlier.shape = NA)+
+  geom_jitter()+
+  labs(title="Life Expectancy in Asia and Europe in 2007")
+```
+
+
+```{r}
+mann_whitney <- wilcox_test(data=df2,formula = lifeExp ~ continent, paired = FALSE)
+```
+
+```{r}
+mann_whitney
+```
+
+
+
+
+### p-value = 1.94e-05 indicates that we should reject H0. It indicates that median life expectancy for Asia and Europe is different.
+
+
+## **Kruskal - Wallis - at least 3 independent groups**
+
+### hypotheses:
+<h3>H0: Median life expectancy in Europe in 2007 = Median life expectancy in Asia in 2007 = Median life expectancy in Americas in 2007</h3>
+<h3>Ha: at least one pair doesn't exhibit equal medians</h3>
+
+
+
+```{r}
+df3 <- gapminder
+```
+
+
+```{r}
+table(df3$continent,df3$year)
+```
+
+
+```{r}
+df3<-df3 %>%
+  filter(continent %in% c("Europe","Asia","Americas"),
+         year == 2007) %>%
+  mutate(continent = as.factor(continent),
+         year = as.factor(year)) %>%
+  select(2,3,4)
+```
+
+
+```{r}
+df3$continent <- droplevels(df3$continent)
+```
+
+
+```{r}
+table(df3$continent)
+```
+
+```{r}
+df3
+```
+
+
+### Kruskal Wallis statistic formuala
+
+```{r,fig.width=5,fig.height=1.5}
+ggplot() + 
+    background_image(readPNG("images/kruskal_wallis.png"))
+```
+
+
+
+```{r}
+df3 %>%
+  ggplot(aes(x=continent,y=lifeExp))+
+  geom_boxplot(outlier.shape = NA)+
+  geom_jitter()+
+  labs(title="Life Expectancy by Continent in 2007")
+```
+
+
+```{r}
+kruskal_test(data=df3,lifeExp~continent)
+```
+
+### Conclusion: p-value = 2.02e-05. The null hypothesis should be rejected.
+
+## **Dunn's test - in order to evaluate differences between groups**
+
+```{r}
+dunn_test(data=df3,formula=lifeExp~continent)
+```
+
+### Significant differences in median in groups:
+<h4>* Americas:Europe</h4>
+<h4>* Asia:Europe</h4>
+
+## **Friedman's ANOVA - at least 3 dependent groups**
+
+### hypotheses:
+<h3>H0: Medians across all groups are equal</h3>
+<h3>Ha: at least on pair of comparisons doesn't exhibit equal median</h3>
+
+```{r}
+df4 <- gapminder
+```
+
+```{r}
+df4 <- df4 %>%
+  filter(continent == "Europe",
+         year %in% c(1997,2002,2007)) %>%
+  mutate(year = as.factor(year))
+```
+
+```{r}
+table(df4$year)
+```
+```{r}
+df4 <- df4%>%
+  select(1,2,3,4)
+```
+
+
+```{r}
+df4
+```
+
+
+```{r}
+df4$id <- rep(seq(1:30),each=3)
+```
+
+```{r}
+df4
+```
+
+### Friedman's ANOVA statistic
+
+
+```{r,fig.width=6,fig.height=2}
+ggplot() + 
+    background_image(readPNG("images/friedman_formula.png"))
+```
+
+
+```{r}
+df4 %>%
+  group_by(year)%>%
+  summarise(median_life_exp = median(lifeExp))
+```
+
+```{r}
+df4 %>%
+  ggplot(aes(x=year,y=lifeExp)) +
+  geom_boxplot()+
+  geom_jitter()+
+  labs(title="Life Expectancy in Europe by Year")
+```
+
+
+```{r}
+friedman.test(df4$lifeExp,df4$year,blocks = df4$id)
+```
+### Based on p-value < 0.05, we should reject the H0.
+
+
+
