@@ -1,1 +1,1 @@
-This directory contains logistic regression projects 
+This directory contains logistic regression projects  
