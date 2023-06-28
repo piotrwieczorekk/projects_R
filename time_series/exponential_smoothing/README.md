@@ -1,1 +1,1 @@
-https://piotrwieczorekk.github.io/projects_R/time_series/exponential_smoothing/exponential_smoothing_methods
+--- IMPORTANT --- the whole executed code can be seen via html:https://piotrwieczorekk.github.io/projects_R/time_series/exponential_smoothing/exponential_smoothing_methods alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
