@@ -1,0 +1,293 @@
+---
+title: "Country Clustering"
+author: "Piotr Wieczorek"
+date: "2023-05-25"
+output: 
+  html_document: 
+    theme: yeti
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+```
+
+## **About the project and the data set:**
+<h3>The data set contains information about following variables:</h3>
+<h4>1. Total fertility rate</h4>
+<h4>2. Median age</h4>
+<h4>3. Life expectancy at birth</h4>
+<h4>4. Age at first marriage (men)</h4>
+<h4>5. Age at first marriage (women)</h4>
+<h4>6. GDP per capita</h4>
+<h4>7. Country</h4>
+<h4>8. Region</h4>
+
+#### The point of this project is to assign countries from different regions into clusters. Fuzzy clustering will be applied followed by the K-means method
+
+## **Loading the libraries and the data set**
+```{r}
+library(factoextra)
+library(cluster)
+library(readxl)
+library(dplyr)
+library(kableExtra)
+library(gridExtra)
+library(forcats)
+library(tidyverse)
+library(tibble)
+```
+
+
+```{r}
+df <- read_excel("C:/Users/piotr/Desktop/R_files/Dane_scalone (1).xlsx")
+```
+
+## **Exploring the data**
+
+### Data set with chosen variables
+
+```{r}
+df <- df %>%
+  select(-c(1,7,8,12,15,11,13,14)) %>%
+  remove_rownames() %>%
+  column_to_rownames(var="Country")
+```
+
+```{r}
+df %>%
+  select(2,everything()) %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px',width='100%')
+```
+
+### Region frequency
+
+```{r}
+sort(table(df$region),decreasing = TRUE)
+```
+### Boxplots characterizing the overall data
+
+```{r,fig.width=10,fig.height=12}
+grid.arrange(
+  df %>%
+  mutate(region = as.factor(region)) %>%
+  mutate(region = fct_reorder(region,-`Total fertility rate`)) %>%
+  ggplot(aes(y=region,x = `Total fertility rate`,fill=region)) +
+  geom_boxplot(outlier.shape = NA)+
+  geom_jitter(aes(color=region),alpha=0.5)+
+  ylab("")+
+  theme_classic()+
+  theme(legend.position = "none"),
+  
+  df %>%
+    mutate(region = as.factor(region)) %>%
+    mutate(region = fct_reorder(region,-GDP)) %>%
+    ggplot(aes(y=region, x = GDP,fill=region)) +
+    geom_boxplot(outlier.shape = NA)+
+    geom_jitter(aes(color=region),alpha=0.5)+
+    ylab("")+
+    theme_classic()+
+    theme(legend.position = "none"),
+  
+  df %>%
+    mutate(region = as.factor(region)) %>%
+    mutate(region = fct_reorder(region,-`Median age`)) %>%
+    ggplot(aes(y=region, x = `Median age`,fill=region)) +
+    geom_boxplot(outlier.shape = NA)+
+    geom_jitter(aes(color=region),alpha=0.5)+
+    ylab("")+
+    theme_classic()+
+    theme(legend.position = "none"),
+  
+  df %>%
+    mutate(region = as.factor(region)) %>%
+    mutate(region = fct_reorder(region,-`Age at first mariage (men)`)) %>%
+    ggplot(aes(y=region, x = `Age at first mariage (men)`,fill=region)) +
+    geom_boxplot(outlier.shape = NA)+
+    geom_jitter(aes(color=region),alpha=0.5) +
+    ylab("")+
+    theme_classic()+
+    theme(legend.position = "none"),
+  
+  df %>%
+    mutate(region = as.factor(region)) %>%
+    mutate(region = fct_reorder(region,-`Age at first mariage (women)`)) %>%
+    ggplot(aes(y=region, x = `Age at first mariage (women)`,fill=region)) +
+    geom_boxplot(outlier.shape = NA)+
+    geom_jitter(aes(color=region),alpha=0.5)+
+    ylab("")+
+    theme_classic()+
+    theme(legend.position = "none"),
+  
+  ncol=1,nrow=5)
+```
+
+<h3>There seems to be a high correlation between GDP and other variables. One could conclude, that wealthy societies are characterized by:</h3>
+<h4>1. High age at first marriage for both men and women</h4>
+<h4>2. High life expectancy at birth</h4>
+<h4>3. High median age</h4>
+<h4>4. Low total fertility rate</h4>
+
+```{r,fig.width=10,fig.height=8}
+df %>%
+  gather(c(`Total fertility rate`, `Median age`, `Life expectancy at birth`,
+           `Age at first mariage (men)`,`Age at first mariage (women)`),
+         key = "var", value = "value") %>%
+  ggplot(aes(x=value,y=GDP)) +
+  geom_point(shape=23, fill="blue", color="darkred", size=3) + 
+  facet_wrap(~ var, scales = "free") +
+  theme_bw()
+```
+
+### Scaling formula
+
+```{r,out.width='50%',fig.align="center"}
+knitr::include_graphics("image/formula1.png")
+```
+
+
+### Selecting and scaling variables
+
+```{r}
+df_scaled <- scale(df[,-c(2)])
+```
+
+### Scaled data set
+
+```{r}
+df_scaled %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(width = '100%', height = "500px")
+```
+
+## **Choosing the optimal amount of clusters**
+
+### Elblow plot 
+
+#### Elblow plot pictures the dependency between the quantity of clusters and total sum of square within each clutser. In clustering it is wanted to obtain low variance within the clusters and high variance betweeen the clusters so that there is a clear distinction between the groups. Based on the plot, 3 clusters seem to be optimal
+
+```{r}
+fviz_nbclust(df_scaled,kmeans,method="wss")
+```
+
+### Silhouette plot 
+
+#### Silhouette plot points 2 clusters as the optimal value. Silhouette score measures the difference between each observation and all other data points of the nearest cluster b(i) and the average distance between each data point within a cluster a(i). The result is then divided by maximum either a(i) or b(i). The higher the score, the better the clusters are separated and the lower the variance within the clusters. Although it suggests 2 clusters, 3 clusters were chosen as 2 clusters don't seem to fit the charactertic of the data set.
+
+```{r,out.width='50%',fig.align="center",fig.cap="Source = https://www.analyticsvidhya.com/blog/2021/05/k-mean-getting-the-optimal-number-of-clusters/"}
+knitr::include_graphics("image/formula2.png")
+```
+
+```{r}
+fviz_nbclust(df_scaled,kmeans,method="silhouette")
+```
+
+## **K-means algorithm**
+```{r}
+df_scaled_fit <- kmeans(df_scaled,3,nstart = 100)
+```
+
+### Between_SS and total_SS 
+
+#### (between_SS / total_SS) =  70.5 % means that 70.5 % of the total variance in the data set is explained by the clustering
+
+```{r}
+df_scaled_fit
+```
+
+### Cluster centers
+
+```{r}
+df_scaled_fit$centers
+```
+
+### Adding the clusters to the original data set
+
+
+```{r}
+df$clusters <- df_scaled_fit$cluster
+```
+
+```{r}
+df %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(width = '100%', height = "500px")
+```
+
+### Clustering plot
+
+```{r,fig.width=18,fig.height=14}
+#rownames(df_scaled) <- paste(df$Country,1:dim(df)[1],sep="_")
+fviz_cluster(list(data=df_scaled,cluster= df_scaled_fit$cluster),repel = TRUE)
+```
+
+
+## **Fuzzy clustering**
+
+```{r}
+res_fuzzy <- fanny(df_scaled,k=3)
+```
+
+```{r}
+membership <- as.data.frame(res_fuzzy$membership)
+colnames(membership) <- c("First cluster","Second cluster", "Third cluster")
+membership[,1:3] <- sapply(membership, function(x) round(x,2))
+```
+
+```{r}
+membership %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px',width='100%')
+  
+```
+
+
+```{r}
+optimal_cluster_df <- as.data.frame(res_fuzzy$clustering)
+colnames(optimal_cluster_df) <- c("optimal_cluster")
+```
+
+```{r}
+optimal_cluster_df$optimal_cluster
+```
+```{r}
+membership$optimal_cluster <- optimal_cluster_df$optimal_cluster
+```
+
+```{r}
+membership %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px',width='100%')
+```
+### Dunn's coefficient
+
+#### According to the [library's documentation](https://search.r-project.org/CRAN/refmans/clValid/html/dunn.html), low values of Dunn's coefficient indicate very fuzzy clustering, while a value close to 1 indicates close to tight clustering. Judging on it's value (0.4362) conducted clustering seems to be more fuzzy than tight.  
+
+```{r}
+res_fuzzy$coeff
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
