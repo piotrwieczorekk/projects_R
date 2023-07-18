@@ -1,0 +1,103 @@
+---
+title: "PCA Analysis - diamonds data set"
+author: "Piotr Wieczorek"
+date: "2023-07-18"
+output: 
+  html_document: 
+    theme: lumen
+---
+
+# PCA Project - Reducing components of the diamonds data set to find characterstics for each price group
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+
+
+```{r}
+library(readr)
+library(tidyverse)
+library(factoextra)
+```
+
+```{r}
+df <- diamonds
+```
+
+```{r}
+summary(df)
+```
+
+### Technically, it's good when the mean correlation of all numeric variables is more than 0.3 to conduct PCA analysis. In this example it amounts to ~0.51
+
+```{r}
+mean(cor(df[,c("carat","depth","table","x","y","z")]))
+```
+### Creating a column with price category based on the quantiles
+
+```{r}
+quantile(df$price,probs = seq(0.25,1,0.25))
+```
+
+```{r}
+df$price_category <- ifelse(df$price <= 950, "<=25%", ifelse(df$price <= 2401 & df$price >950, ">25% & <=50%",
+                                                            ifelse(df$price <= 5324.25 & df$price > 2401, ">50% &<=75%",">75%")))
+```
+
+```{r}
+df$price_category <- as.factor(df$price_category)
+```
+
+### Removing the price variable. Not removing it would make the PCA a lot biased, since we want to group the data based on the price category, and it would take some weight of price for the linear combination between PCA's and the variables
+
+```{r}
+df <- df %>%
+  select(-c("price"))
+```
+
+```{r}
+df_numeric <- df[,c("carat","depth","table","x","y","z")]
+```
+
+```{r}
+pca <- prcomp(df_numeric,scale. = TRUE)
+```
+
+### PCA1 and PCA2 together capture 86.94% of the overall variance.
+```{r}
+summary(pca)
+```
+### Eigen vectors - these are the weights for linear combinations between PCA's and variables. For example: PC1 = 0.49carat + (-0.0006)depth + 0.12table ... + 0.49z.
+
+### PC1 puts mostly weight on carat, x, y and z, while PC2 puts mostly weight on depth and table.
+
+```{r}
+pca$rotation
+```
+
+### Principal Component's Scores:
+
+### To get these numbers, the matrix of the scaled data is multiplied by the vector of ordered eigen vectors
+
+```{r}
+head(pca$x)
+```
+### Scree plot
+```{r}
+fviz_eig(pca,addlabels = TRUE)
+```
+
+
+```{r}
+fviz_pca_biplot(pca,label="var",
+                habillage = df$price_category)
+```
+
+```{r}
+pca$rotation
+```
+### Based on the Biplot and the eigen vectors, we are able to conclude that:
+<h3>1. high values of carat, x, y and z are typical for high priced diamonds</h3>
+<h3>2. Depth and table don't matter that much, since it seems that moves on the Y axis don't affect moves on the X axis for each price group</h3>
+
+
