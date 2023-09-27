@@ -1,0 +1,116 @@
+---
+title: "Countries PCA"
+author: "Piotr Wieczorek"
+date: "2023-09-26"
+output: 
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    theme: journal
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = F,message = F)
+```
+
+### Libraries
+
+```{r}
+library(readr)
+library(tidyverse)
+library(factoextra)
+library(psych)
+```
+
+
+### Loading the data
+
+```{r}
+df <- read_csv("Country-data.csv")
+View(df)
+```
+
+```{r}
+head(df)
+```
+### Features summary
+
+```{r}
+df %>%
+  summary()
+```
+### Bartlett's Test of Sphericity
+
+##### This test is uded to evaluate, whether there is a statistically significant divergence between the correlation matrix and the indentity matrix. Before we continue with PCA analysis, we have to make sure that there is some correlation in the original data.
+
+##### Hypotheses:
+* H0: These matrixes doesn't diverge
+* Ha: These matrixes diverge
+
+```{r}
+cortest.bartlett(R = df %>% select_if(is.numeric) %>% cor(),n = nrow(df))
+```
+##### P-value is extremely low, therefore we reject the H0.
+
+### PCA Analysis
+
+#### Scaling the data
+
+```{r}
+pca <- prcomp(x = df %>% select_if(is.numeric), scale.=TRUE)
+```
+
+#### Getting the eigenvalues and eigenvectors
+
+```{r}
+pca
+```
+
+#### Components Importance
+
+```{r}
+summary(pca)
+```
+##### PCA1 explains 46% of variance while PCA2 explains 17.2% of variance
+
+```{r}
+fviz_eig(pca,addlabels = TRUE)
+```
+
+
+#### Features contribution to PCA1
+
+##### Life_expec, child_mort, total_fer, income and gdp contribute the most to PCA1 among all features
+
+```{r}
+fviz_contrib(pca,choice="var")
+```
+
+#### Features contribution to PCA2
+
+##### Imports and exports contribute the most to PCA2 among all features
+```{r}
+fviz_contrib(pca,choice="var",axes=2)
+```
+
+```{r}
+fviz_pca_biplot(pca,label="var")
+```
+
+#### Biplot conclusions
+1. Imports and exports are positively correlated
+2. There is almost no correlation between imports, exports and income, gdp, life expectancy, health, total_fer, child_mort
+3. Child_mort, total_fer and inflation are positively correlated
+4. Income, gdpp, life_expec and health and positively correlated
+5. Exports and inflation are negatively correlated
+
+
+
+
+
+
+
+
+
+
+
