@@ -1,0 +1,1 @@
+--- IMPORTANT --- the whole executed code can be seen via html: file:///C:/Users/piotr/Desktop/R_files/polish_football_pca_clustering.html alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
