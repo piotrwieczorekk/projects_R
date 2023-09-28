@@ -1,0 +1,246 @@
+---
+title: "Predicting Car Price"
+author: "Piotr Wieczorek"
+date: "2023-09-28"
+output: 
+  html_document: 
+    toc: yes
+    highlight: tango
+    theme: spacelab
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+
+## Libraries
+
+```{r}
+library(readr)
+library(tidyverse)
+library(caret)
+library(Metrics)
+library(glue)
+library(kableExtra)
+```
+
+## Reading and cleaning the data
+
+```{r}
+df <- read_csv("used_cars.csv")
+```
+
+
+```{r}
+df %>% 
+  head(10) %>%
+  kable(align = "c") %>%
+  kable_styling(position = "center") %>%
+  scroll_box(width = "100%", height = "100%")
+```
+
+### Taking the log of the price to stabilize model's residuals
+
+```{r}
+df<-df %>%
+  select(-1) %>%
+  mutate_if(is.character,as.factor) %>%
+  mutate(year = as.factor(year)) %>%
+  mutate(price = log(price))
+```
+
+```{r}
+df %>% 
+  head(10)%>%
+  kable(align = "c") %>%
+  kable_styling(position = "center") %>%
+  scroll_box(width = "100%", height = "100%")
+```
+
+## Fixing near-zero-variance variables
+
+```{r}
+count(df,transmission,sort=TRUE)
+```
+
+```{r}
+df<-df %>%
+  filter(!(transmission == "Other"))
+```
+
+```{r}
+count(df,transmission,sort=TRUE)
+```
+
+```{r}
+count(df,year,sort=TRUE)
+```
+```{r}
+df <- df %>%
+  mutate(year = fct_collapse(year,
+                             before_2013 = c("2012","2011","2010","2009","2008","2007","2006","2005","2004","2003","2002","2001","2000","1998","1999","1997","1970","1996"))) %>%
+  filter(!(year == "2060"))
+```
+
+```{r}
+count(df,year,sort=TRUE)
+```
+
+```{r}
+count(df,Make,sort=TRUE)
+```
+```{r}
+count(df,fuelType,sort=TRUE)
+```
+```{r}
+df <- df %>%
+  filter(!(fuelType %in% c("Other","Electric")))
+```
+
+```{r}
+count(df,fuelType,sort=TRUE)
+```
+
+```{r}
+model_count <- count(df,model,sort=TRUE)
+```
+
+```{r}
+model_count
+```
+
+
+```{r}
+model_count_below_250 <- model_count %>%
+  filter(n<250) %>%
+  select(1) 
+```
+
+
+```{r}
+unique(model_count_below_250$model)
+```
+
+```{r}
+recode_levels <- function(x) {
+  unique_levels <- as.character(unique(model_count_below_250$model))
+  ifelse(as.character(x) %in% unique_levels, "Other", as.character(x))
+}
+```
+
+```{r}
+df$model <- recode_levels(df$model)
+```
+
+
+```{r}
+count(df,model,sort=TRUE)
+```
+
+## Linear Model - predicting log(price)
+
+### Data partition
+
+```{r}
+set.seed(123)
+data_partition <- createDataPartition(df$price,p=0.75,list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(paste('train_set nrow:',nrow(train_set),sep = ' '))
+print(paste('test_set nrow:',nrow(test_set),sep = ' '))
+```
+### Model formula
+
+```{r}
+mod <- lm(formula = 'price ~.',data=train_set)
+```
+
+### Model summary
+
+```{r}
+summary(mod)
+```
+## Prediction on the test set
+
+```{r}
+test_prediction <- predict(mod,test_set)
+```
+
+```{r}
+test_set$prediction <- test_prediction
+```
+
+```{r}
+test_set <- test_set %>%
+  select(1,2,4,5,6,7,8,9,10,3,11)
+```
+
+### Calculating residuals
+
+```{r}
+test_set$residuals <- test_set$price - test_set$prediction
+```
+
+```{r}
+test_set %>%
+  head(10) %>%
+  kable(align = "c") %>%
+  kable_styling(position = "center") %>%
+  scroll_box(width = "100%", height = "100%")
+```
+
+### Standarizing residuals
+
+```{r}
+standarize_res <- function(x) {
+  mean_residual = mean(test_set$residuals)
+  sd_residual = sd(test_set$residuals)
+  standarized_residual = (test_set$residuals - mean_residual) / sd_residual
+  return(standarized_residual)
+}
+```
+
+```{r}
+test_set$standarized_residuals <- standarize_res(test_set$residuals)
+```
+
+### Metrics
+
+```{r}
+metric_mae <- mae(test_set$price,test_set$prediction)
+print(glue("The model was wrong by: {metric_mae} (on average). Bear in mind that price was logarithmized before"))
+```
+
+
+```{r}
+metric_mape <- mape(test_set$price,test_set$prediction)
+print(glue("The model was wrong (percentwise) by: {metric_mape} (on average). Bear in mind that price was logarithmized before"))
+```
+
+
+## Residual plot
+
+```{r}
+test_set %>%
+  ggplot(aes(x=prediction, y=standarized_residuals)) + 
+  geom_point(shape=23,fill="#79C686") +
+  geom_smooth(method="lm",se=F,color = "black") + 
+  ggtitle('Residual Plot')+
+  theme_bw()
+```
+
+## Residuals density
+
+```{r}
+test_set %>%
+  ggplot(aes(x=residuals)) + 
+  geom_density(fill="#79C686",color="black") + 
+  ggtitle('Residuals Density Plot')+
+  theme_bw()
+```
+
+
+
+
