@@ -1,0 +1,195 @@
+---
+title: "Predicting Unemployment Rate in Poland - VAR Model"
+author: "Piotr Wieczorek"
+date: "2023-09-29"
+output: 
+  html_document: 
+    toc: yes
+    highlight: haddock
+    theme: spacelab
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+
+## Libraries
+
+```{r}
+library(vars)
+library(tidyverse)
+library(tseries)
+library(stargazer)
+library(readr)
+library(forecast)
+library(readxl)
+library(gridExtra)
+library(urca)
+```
+
+## Reading, cleaning and exploring the data
+
+```{r}
+df_unemp <- read_excel("unemp_rate.xlsx")
+df_export <- read_excel("export2.xlsx")
+```
+
+
+
+```{r}
+df_export <- df_export %>%
+  mutate(export_mln_pln = str_replace_all(export_mln_pln,' ','')) %>%
+  mutate(export_mln_pln = as.numeric(export_mln_pln))
+```
+
+```{r}
+df_export <- df_export$export_mln_pln
+```
+
+
+
+```{r}
+df_unemp <- df_unemp$unemp_rate
+```
+
+```{r}
+df_unemp <- df_unemp[1:162]
+```
+
+
+
+
+
+### Reducing number of rows for all variables to be of equal nrow
+
+
+```{r}
+df_export <- df_export[1:162]
+```
+
+
+```{r}
+df_unemp
+```
+```{r}
+df_export
+```
+
+
+
+
+
+### Changing data to time series format. Note that the data was transformed to log before transforming it to a time series data type
+
+```{r}
+ts_unemp <- ts(log(df_unemp), start=c(2010,1),frequency=12)
+ts_export <- ts(log(df_export),start=c(2010,1),frequency=12)
+```
+
+```{r}
+ts_unemp
+```
+
+```{r}
+ts_export
+```
+
+
+### Original time series (log data)
+
+```{r,fig.width=12,fig.height=6}
+grid.arrange(
+  autoplot(ts_unemp),
+  autoplot(ts_export)
+)
+```
+
+## Differencing the data
+
+```{r}
+ts_unemp_diff <- diff(ts_unemp,lag=1)
+ts_export_diff <- diff(ts_export,lag=1)
+```
+
+## ADF Tests
+
+#### Hypotheses:
+* H0: Time series is non-stationary
+* Ha: Time series is stationary
+
+```{r}
+print(adf.test(ts_unemp_diff))
+print(adf.test(ts_export_diff))
+```
+
+```{r}
+df <- cbind(ts_unemp_diff, ts_export_diff)
+```
+
+## Selecting optimal lags for VAR model
+
+```{r}
+lag <- VARselect(df, lag.max=10)
+print(lag)
+```
+## VAR model
+
+```{r}
+estim <- VAR(df,p=10,type="const")
+```
+
+
+```{r}
+summary(estim)
+```
+
+### Summary for unemployment
+
+```{r}
+summary(estim$varresult$ts_unemp_diff)
+```
+
+## Causality test
+
+#### Based on the results the conclusion is that export has an impact on unemployment in such a way that lagged values of export help predicting future values of unemployment
+
+```{r}
+causality(estim, cause = "ts_export_diff")
+```
+## IRF plot
+
+#### IRF measures how one variable responds to a sudden shock in another variable. In this case, a sudden (positive) shock in export results in a sudden decrease in unemployment rate but only in a very short term.
+
+```{r}
+plot(irf(estim,impulse="ts_export_diff",response = "ts_unemp_diff",n.ahead = 16),main="ts_unemp_diff response to ts_export_diff impulse")
+
+```
+
+
+## FEVD Plots
+
+#### FEVD (Forecast Error Variance Decomposition) measure how the "uncertainty" (measured by residual's variance) of one variable can be explained by the variable itself and "uncertainty" of other variable. In this case, a lot of residual's variance for unemployment can be explained by residual's  variance for export, which suggests that there is some relation between these variables
+
+```{r,fig.height=12,fig.width=12}
+plot(fevd(estim, n.ahead = 16))
+```
+
+
+## Prediction plots
+
+```{r,fig.height=7}
+plot(predict(estim,n.ahead = 12))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
