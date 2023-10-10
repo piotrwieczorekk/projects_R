@@ -84,11 +84,11 @@ head(data_xts,10)
 
 ### 11 Bit stock rate plot
 
-```{r}
+```{r,fig.width=10}
 chartSeries(data_xts$Close,name = '11 Bit Daily Stock Price')
 ```
 
-```{r}
+```{r,fig.width=10}
 chartSeries(data_xts$log_return_rate, name = '11 Bit Daily Logarithmic Return Rate')
 ```
 
@@ -123,6 +123,7 @@ adf.test(data_xts[-1,]$log_return_rate)
 ## Daily Return Rate Monte Carlo Simulation
 
 ```{r}
+set.seed(123)
 X = matrix(ncol = 30,nrow = 10000)
 for(day in 1:30) {
   # for each day (30 in total) sample the return rate 100000 times
@@ -152,15 +153,15 @@ PerformanceAnalytics::Return.annualized(R = daily_log_return_rates,scale=252)
 #### This result is almost identical to manual calculations
 
 ```{r}
-0.03413412/30
+0.03316568/30
 ```
 
 ```{r}
-(1+0.001137804)^252-1
+(1+0.001105523)^252-1
 ```
 #### And it's identical if we pass the average daily return rate to the formula
 
 ```{r}
-PerformanceAnalytics::Return.annualized(R=0.001137804,scale=252)
+PerformanceAnalytics::Return.annualized(R=0.001105523,scale=252)
 ```
 
