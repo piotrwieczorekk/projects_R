@@ -1,0 +1,81 @@
+---
+title: "missForest imputation on the penguins data set"
+author: "Piotr Wieczorek"
+date: "2023-10-12"
+output: 
+  html_document: 
+    toc_depth: 4
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(palmerpenguins)
+library(tidyverse)
+library(missForest)
+library(naniar)
+library(skimr)
+```
+
+### How missForest algorithm works
+
+#### 
+1. The algorithm divides the data set in the training set and the prediction set. The first one consists of non missing data, the second one consists of missing data
+2. The algorithm replaces missing data in the prediction set with corresponding means/medians/modes depending on the variable type
+3. missForest learns patterns on the training set creating specified amount of trees (usually 100). When it comes to predicting numerical variables, the algorithm takes average of the predictions of all trees for each missing value in the prediction set. For categorical variable, the algorithm takes the mode.
+4. The algorithm fits the predictions and the newly predicted data gets moved to the training set. That's the end of the first iteration
+5. Steps 3-4 are repeated over specified amount of iterations (usually 5-10). The point is reach convergence by minimizing the squared differences between new predictions and previous predictions for numerical data, and the difference in frequency for particular categories in categorical variables
+
+```{r}
+head(penguins)
+```
+
+### Data summary
+```{r}
+skimr::skim(penguins)
+```
+
+### Missing values 
+```{r}
+naniar::miss_var_summary(penguins)
+```
+```{r}
+naniar::gg_miss_var(penguins)
+```
+
+
+```{r}
+penguins <- penguins
+```
+
+```{r}
+class(penguins)
+```
+
+```{r}
+class(as.data.frame(penguins))
+```
+
+### Applying missForest to the data
+```{r}
+penguins_imputed <- missForest(as.data.frame(penguins))
+```
+
+```{r}
+penguins_imputed$ximp
+```
+
+### OOB error for the model - Percentage of Falsely Clasified and Normalized Root Mean Square Error
+
+```{r}
+penguins_imputed$OOBerror
+```
+
+
