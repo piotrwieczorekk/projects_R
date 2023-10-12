@@ -13,7 +13,6 @@ output:
 knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
 ```
 
-
 ```{r}
 library(readr)
 library(tidyverse)
@@ -28,11 +27,6 @@ df <- diamonds
 summary(df)
 ```
 
-### Technically, it's good when the mean correlation of all numeric variables is more than 0.3 to conduct PCA analysis. In this example it amounts to ~0.51
-
-```{r}
-mean(cor(df[,c("carat","depth","table","x","y","z")]))
-```
 ### Creating a column with price category based on the quantiles
 
 ```{r}
