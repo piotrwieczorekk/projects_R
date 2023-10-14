@@ -1,0 +1,588 @@
+---
+title: "XGBoost - Income Classification"
+author: "Piotr Wieczorek"
+date: "2023-10-14"
+output: 
+  html_document: 
+    toc: yes
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Goal of this project
+
+### The goal of this project is to use XGBoosting algorithm to predict the income group (either >50K or <=50K) based on the following variables:
+<h4>1. age</h4>
+<h4>2. work class</h4>
+<h4>3. education</h4>
+<h4>4. marital status</h4>
+<h4>5. occupation</h4>
+<h4>6. race</h4>
+<h4>7. sex</h4>
+<h4>8. hours per week (of work)</h4>
+<h4>9. native country</h4>
+
+## Libraries and reading the data
+
+```{r}
+library(tidyverse)
+library(caret)
+library(fastDummies)
+library(performance)
+library(psych)
+library(gridExtra)
+library(rcompanion)
+library(kableExtra)
+library(xgboost) 
+library(png)
+library(ggpubr)
+library(glue)
+library(missForest)
+```
+
+
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+df <- read_csv("C:/Users/piotr/Desktop/R_files/adult.csv")
+```
+
+
+## Exploring the data set
+
+
+```{r}
+colnames(df)
+```
+### Replacing "?" signs with NaN values
+
+```{r}
+str(df)
+```
+```{r}
+length(df[df=="?"])
+```
+
+```{r}
+df[df=="?"] <- NA
+```
+
+```{r}
+sum(is.na(df))
+```
+
+```{r}
+sapply(df, function(x) sum(is.na(df)))
+```
+### Choosing only columns that will be used in the model
+
+```{r}
+df <- df %>%
+  select(c("age","workclass","education","marital.status","occupation","race","sex","hours.per.week","native.country","income"))
+```
+
+
+### Let's describe numeric variables
+
+```{r}
+df %>%
+  select_if(is.numeric) %>%
+  describe() %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(width = "100%",height = '200px')
+```
+
+### Change character variables to factors
+
+```{r}
+df <- df%>%
+  mutate_if(is.character,as.factor)
+```
+
+```{r}
+df %>%
+  select_if(is.factor) %>%
+  colnames()
+```
+
+### Aggregating factor variables in order to not only simplify the model, but also to get rid of near zero variance variables
+
+```{r}
+count(df,education,sort = TRUE)
+```
+
+```{r}
+df <- df %>%
+  mutate(education = fct_collapse(education, 
+                                  "Higher_education" = c("Bachelors","Masters"),
+                                  "High_school_graduate" = "HS-grad",
+                                  other_level = "Other_education")) 
+```
+
+
+```{r}
+count(df,workclass,sort = TRUE)
+```
+```{r}
+df <- df %>%
+  mutate(workclass = fct_collapse(workclass, 
+                                  "Gov_employed" = c("Local-gov","State-gov","Federal-gov"),
+                                  "Self_employed" = c("Self-emp-not-inc","Self-emp-inc")))
+```
+
+#### Note that without-pay category occurs only 14 times (it would be a near-zero-variance dummy variable). It was decided to delete these 14 rows from the dataset, as there is no real logical way to combine it with other categories
+
+```{r}
+df <- subset(df, !(workclass %in% "Without-pay"))
+df$workclass <- droplevels(df$workclass)
+```
+
+
+```{r}
+count(df,marital.status,sort = TRUE)
+```
+
+```{r}
+df<- df %>%
+  mutate(marital.status = fct_collapse(marital.status,
+                                       "Married" = c("Married-civ-spouse","Married-spouse-absent","Married-AF-spouse"),
+                                      other_level = "Not_married"))
+```
+
+
+
+```{r}
+count(df,occupation,sort = TRUE)
+```
+
+#### Armed-Forces (n=9) and Priv-house serv (n=143) were deleted because there was no logical way to combine these categories with another categories and otherwise they would be near-zero-variance dummy variables
+```{r}
+df <- subset(df,!(occupation %in% c("Armed-Forces","Priv-house-serv")))
+df$occupation <- droplevels(df$occupation)
+```
+
+
+```{r}
+count(df,race,sort = TRUE)
+```
+```{r}
+df <- df %>%
+  mutate(race = fct_collapse(race,
+                             "Other_race" = c("Other","Amer-Indian-Eskimo","Asian-Pac-Islander")))
+```
+
+```{r}
+count(df,sex,sort = TRUE)
+```
+
+```{r}
+count(df,native.country,sort = TRUE)
+```
+
+```{r}
+df <- df %>%
+  mutate(native.country = fct_collapse(native.country,
+                                       "USA" = c("United-States"),
+                                       "Europe" = c("Germany","England","Poland","Italy","Portugal","Greece","France",
+                                                    "Ireland","Yugoslavia","Hungary","Scotland","Holand-Netherlands"),
+                                       other_level = "Other"))%>%
+  rename("Native_region" = "native.country")
+```
+
+
+
+```{r}
+count(df,income,sort = TRUE)
+```
+
+### Handling missing values after aggregating factor variables
+
+```{r}
+sapply(df, function(x) sum(is.na(x)))
+```
+
+```{r}
+class(as.data.frame(df))
+```
+
+
+```{r}
+df_imputed <- missForest(as.data.frame(df))
+```
+
+1. NRMSE stand for normalized root mean squared error and it takes into account only continuous variables. In our data set, there is no missing values for continuous variable therefore it equals to 0.
+2. PFC stands for proportion of falsely classified entries and it takes into account categorical variables.
+
+```{r}
+df_imputed$OOBerror
+```
+
+```{r}
+class(df_imputed)
+```
+```{r}
+df <- as.data.frame(df_imputed$ximp)
+```
+
+## Additional Data exploration
+
+### Age density by income
+
+#### It's clear that mean, median and mode of age is higher for >50k income
+
+```{r}
+df %>%
+  ggplot(aes(x=age,fill=income)) +
+  geom_density(alpha=0.5)+
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) +  
+  theme_bw()+
+  ggtitle("Age Density by Income")
+```
+
+### Factor variables by Income
+
+#### Based on the plots below, one could conclude that:
+<h4>1. There is probably no significant correlation between race and income</h4>
+<h4>2. People who are married should be expected to have a higher income</h4> 
+<h4>3. Native region seems to be somewhat informative, as people from outside Europe and USA in general have a lower income</h4>
+<h4>4. Higher education seems to be highly related to higher income</h4>
+<h4>5. Work class seems to be irrelevant as the differences between categories are low</h4>
+<h4>6. Occupation plays an important role especially considering executive categories</h4> 
+<h4>7. Sex is also an important factor as men tend to have a higher income than women</h4>
+
+```{r,fig.width=12,fig.height=14}
+grid.arrange(
+  count(df,race,income) %>%
+  group_by(race) %>%
+  mutate(percent = n/sum(n)) %>%
+  mutate(percent = round(percent,2)) %>%
+  ggplot(aes(x=race,y=percent,fill=income)) +
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) + 
+  theme_bw()+
+  xlab("Race")+
+  ylab("%")+
+  ggtitle("Race Percentage by Income")+
+  theme_bw(),
+  
+  count(df,marital.status,income) %>%
+  group_by(marital.status) %>%
+  mutate(percent = n/sum(n)) %>%
+  mutate(percent = round(percent,2)) %>%
+  ggplot(aes(x=marital.status,y=percent,fill=income)) +
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) + 
+  theme_bw()+
+  xlab("Marital status")+
+  ylab("%")+
+  ggtitle("Marital Status Percentage by Income")+
+  theme_bw(),
+  
+  count(df,Native_region,income) %>%
+  group_by(Native_region) %>%
+  mutate(percent = n/sum(n)) %>%
+  mutate(percent = round(percent,2)) %>%
+  ggplot(aes(x=Native_region,y=percent,fill=income)) +
+  geom_bar(stat="identity")+
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) + 
+  xlab("Native region")+
+  ylab("%")+
+  ggtitle("Native Region Percentage by Income") + 
+  theme_bw(),
+  
+  count(df,education,income) %>%
+  group_by(education) %>%
+  mutate(percent = n/sum(n)) %>%
+  mutate(percent = round(percent,2)) %>%
+  ggplot(aes(x=education,y=percent,fill=income)) +
+  geom_bar(stat="identity")+
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) + 
+  xlab("Education")+
+  ylab("%")+
+  ggtitle("Education Percentage by Income") + 
+  theme_bw(),
+  
+  count(df,workclass,income) %>%
+  group_by(workclass) %>%
+  mutate(percent = n/sum(n)) %>%
+  mutate(percent = round(percent,2)) %>%
+  ggplot(aes(x=workclass,y=percent,fill=income)) +
+  geom_bar(stat="identity")+
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) + 
+  xlab("Workclass")+
+  ylab("%")+
+  ggtitle("Workclass Percentage by Income")+
+  theme_bw(),
+  
+  count(df,occupation,income) %>%
+  group_by(occupation) %>%
+  mutate(percent = n/sum(n)) %>%
+  mutate(percent = round(percent,2)) %>%
+  ggplot(aes(y=occupation,x=percent,fill=income)) +
+  geom_bar(stat="identity")+
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) + 
+  ylab("Occupation")+
+  xlab("%")+
+  ggtitle("Occupation Percentage by Income")+
+  theme_bw(),
+  
+  count(df,sex,income) %>%
+  group_by(sex) %>%
+  mutate(percent = n/sum(n)) %>%
+  mutate(percent = round(percent,2)) %>%
+  ggplot(aes(y=sex,x=percent,fill=income)) +
+  geom_bar(stat="identity")+
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) +
+  ylab("Sex")+
+  xlab("%")+
+  ggtitle("Sex Percentage by Income") + 
+  theme_bw(),
+  
+  count(df,income) %>%
+  ggplot(aes(x=income,y=n,fill=income)) + 
+  geom_bar(stat="identity")+
+  scale_fill_manual(values=c("#76BBC3","#84BC8E")) + 
+  xlab("Income")+
+  ylab("Frequency")+ 
+  ggtitle("Frequency of Income") + 
+  theme_bw(),
+
+  
+  ncol = 2,nrow=4
+)
+```
+
+### Variable's dependency based on the Chi-squared test and the Cramer V score
+
+```{r}
+df_chi <- data.frame()
+for (i in c("workclass","education","marital.status","occupation","race","sex","Native_region")){
+  chi_test = chisq.test(df[[i]],df$income)
+  chi_stat = chi_test$statistic
+  cramer = cramerV(df[[i]],df$income)
+  variable_name = i
+  output = c(chi_stat,cramer,variable_name)
+  df_chi = rbind(df_chi,output)
+}
+
+colnames(df_chi) <- c("chisq_stat","cramer's v","var_name")
+
+df_chi <- df_chi %>%
+  select(3,1,2) %>%
+  mutate(chisq_stat = as.numeric(chisq_stat),
+         `cramer's v` = as.numeric(`cramer's v`)) %>%
+  mutate(chisq_stat = round(chisq_stat,2),
+         `cramer's v` = round(`cramer's v`,2)) %>%
+  arrange(desc(`cramer's v`)) 
+
+df_chi %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") 
+
+```
+
+```{r}
+table(df$income)
+```
+## Modelling
+
+### Creating data partition
+
+```{r}
+data_partition <- caret::createDataPartition(df$income,times=1,p=0.75,list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(glue("train_set ncol: {ncol(train_set)}"))
+print(glue("train_set nrow: {nrow(train_set)}"))
+print(glue("test_set ncol: {ncol(test_set)}"))
+print(glue("test_set nrow: {nrow(test_set)}"))
+```
+```{r}
+22498/(22498+7498)
+```
+```{r}
+table(train_set$income)
+```
+### Upsampling the train set
+
+```{r}
+train_set_upsampled <- caret::upSample(x=train_set[,1:9],y=train_set$income)
+```
+
+```{r}
+table(train_set_upsampled$Class)
+```
+
+```{r}
+head(train_set_upsampled)
+```
+
+```{r}
+class(test_set[,10])
+```
+
+```{r}
+class(train_set_upsampled[,10])
+```
+```{r}
+lab_train <- as.factor(train_set_upsampled[, 10])
+lab_test <- as.factor(test_set[[10]])
+```
+
+### Creating dummy variables
+
+```{r}
+dummy_train <- dummyVars("~ .", data = train_set_upsampled[,-10])
+new_data_train <- data.frame(predict(dummy_train,newdata = train_set_upsampled[,-10]))
+```
+
+```{r}
+train_set_upsampled <- cbind(new_data_train,lab_train)
+```
+
+```{r}
+dummy_test <- dummyVars("~ .", data = test_set[,-10])
+new_data_test <- data.frame(predict(dummy_test,newdata = test_set[,-10]))
+```
+
+```{r}
+test_set <- cbind(new_data_test,lab_test)
+```
+
+
+```{r}
+colnames(train_set_upsampled)[32]
+```
+```{r}
+colnames(test_set)[32]
+```
+```{r}
+colnames(train_set_upsampled)[32] <- "Income"
+colnames(test_set)[32] <- "Income"
+```
+
+### XGBoost algorithm
+
+#### How the algorithm works:
+1. At the beginning, it assignes a "default" probability to each row in the data set. In case of binary classification, the algorithm would likely assign 0.5 probability to each row. 
+2. Decision trees are created. Usually the amount of trees ranges from 500 to 2000. Each decision tree is build based on the residuals from the prediction in step 1. So we would get only 0.5 and -0.5 residuals. 
+3. The algorithm would calculate similarity weights for each root and leaf node and then calculate gains. The decision trees might look like this:
+
+```{r,fig.width=10}
+ggplot() + 
+    background_image(readPNG("images/trees.png"))
+```
+4. The algorithm would activate the sigmoid function: sigmoid(log(p/1-p) + learning rate * similarity weight) which results in 1/(1+e^log(p/1-p) + learning rate * similarity weight). Each row in the data set would follow a specific path in the decision trees and obtain a similarity weight which would be then passed to the sigmoid function to calculate the probability for each row.
+5. After obtaining the probabilities, the algorithm would then calculate the residuals
+6. In the next iteration, new decision tree would be created based on the new residuals, new similarity weights, gains and probabilities would be computed
+7. The process would repeat iteratively, usually 500 to 2000 times.
+8. The method (cv stand for cross-validation)
+In this case when the number = 3 it means that the train set will be divided into 3 parts (samples) and the model will be calculated on one of them and tested on the remaining two, continuing this process for each part (sample)
+
+```{r}
+# Doing XGBoost for classification purposes.
+grid_tune <- expand.grid(
+  nrounds = 1500, #number of trees
+  max_depth = 10,
+  eta = 0.1, #c(0.025,0.05,0.1,0.3), #Learning rate
+  gamma = 0.05, # pruning --> Should be tuned. i.e c(0, 0.05, 0.1, 0.5, 0.7, 0.9, 1.0)
+  colsample_bytree = 0.5, # c(0.4, 0.6, 0.8, 1.0) subsample ratio of columns for tree
+  min_child_weight = 1, # c(1,2,3) # the larger, the more conservative the model
+  #is; can be used as a stop
+  subsample = 0.75 # c(0.5, 0.75, 1.0) # used to prevent overfitting by sampling X% training
+)
+```
+
+
+```{r}
+class(train_set_upsampled[,32])
+```
+
+
+
+```{r}
+set.seed(123)
+train_control <- trainControl(method = "cv",
+                              number=3,
+                              verboseIter = TRUE,
+                              allowParallel = TRUE)
+xgb_tune <- train(x = train_set_upsampled[,-32],
+                  y = train_set_upsampled[,32],
+                  trControl = train_control,
+                  tuneGrid = grid_tune,
+                  method= "xgbTree",
+                  verbose = TRUE)
+```
+
+### Selecting model with the best hyperparameters
+
+```{r}
+xgb_tune$bestTune
+```
+
+```{r}
+train_control <- trainControl(method = "cv",
+                              number=3,
+                              verboseIter = TRUE,
+                              allowParallel = TRUE)
+final_grid <- expand.grid(nrounds = xgb_tune$bestTune$nrounds,
+                           eta = xgb_tune$bestTune$eta,
+                           max_depth = xgb_tune$bestTune$max_depth,
+                           gamma = xgb_tune$bestTune$gamma,
+                           colsample_bytree = xgb_tune$bestTune$colsample_bytree,
+                           min_child_weight = xgb_tune$bestTune$min_child_weight,
+                           subsample = xgb_tune$bestTune$subsample)
+xgb_model <- train(x = train_set_upsampled[,-32],
+                   y = train_set_upsampled[,32],
+                   trControl = train_control,
+                   tuneGrid = final_grid,
+                   method = "xgbTree",
+                   verbose = TRUE)
+```
+
+### Fitting the model on the test set
+
+```{r}
+head(predict(xgb_model, test_set))
+```
+
+```{r}
+xgb.pred <- predict(xgb_model, test_set)
+```
+
+### Confusion matrix
+
+```{r}
+# Confusion Matrix
+confusionMatrix(as.factor(xgb.pred),
+                as.factor(test_set$Income))
+```
+
+####
+1. Accuracy Score: Proportion of correctly classified observations
+2. No Information Rate: If we were to guess the most frequent class, what accuracy would we get?
+3. Kappa: a metric that considers both the true positive rate and the false positive rate, providing a more balanced assessment of the model’s performance. Kappa ranges from -1 to 1, with 0 indicating no better than random chance, and 1 indicating perfect agreement between predictions and true values. (https://changjunlee.com/blogs/posts/4_confusion_mat_and_roc)
+4. Sensitivity: Proportion of correctly classified positive observations
+5. Specificity: Proportion of correctly classified negative observations
+6. Pos Pred Value (precision): Out of all of the observations that the model classified as positive, how many of them were actually positive?
+7. Neg Pred Value: Out of all of the observations that the model classified as negative, how many of them were actually negative?
+8. Prevalence: Proportion of actually positive observations in the data set
+
+
+
+
+
