@@ -484,18 +484,18 @@ print(glue(&quot;train_set ncol: {ncol(train_set)}&quot;))</code></pre>
 <pre class="r"><code>head(train_set_upsampled)</code></pre>
 <pre><code>##   fixed_acidity volatile_acidity citric_acid residual_sugar chlorides
 ## 1           6.2             0.66        0.48            1.2     0.029
-## 2           6.8             0.26        0.42            1.7     0.049
-## 3           6.7             0.23        0.31            2.1     0.046
-## 4           9.8             0.36        0.46           10.5     0.038
-## 5           5.2             0.44        0.04            1.4     0.036
-## 6           5.2             0.44        0.04            1.4     0.036
+## 2           6.2             0.66        0.48            1.2     0.029
+## 3           6.8             0.26        0.42            1.7     0.049
+## 4           6.2             0.45        0.26            4.4     0.063
+## 5           6.7             0.23        0.31            2.1     0.046
+## 6           9.8             0.36        0.46           10.5     0.038
 ##   free_sulfur_dioxide total_sulfur_dioxide density   pH sulphates alcohol Class
 ## 1                  29                   75  0.9892 3.33      0.39    12.8 Other
-## 2                  41                  122  0.9930 3.47      0.48    10.5 Other
-## 3                  30                   96  0.9926 3.33      0.64    10.7 Other
-## 4                   4                   83  0.9956 2.89      0.30    10.1 Other
-## 5                  43                  119  0.9894 3.36      0.33    12.1 Other
-## 6                  43                  119  0.9894 3.36      0.33    12.1 Other</code></pre>
+## 2                  29                   75  0.9892 3.33      0.39    12.8 Other
+## 3                  41                  122  0.9930 3.47      0.48    10.5 Other
+## 4                  63                  206  0.9940 3.27      0.52     9.8 Other
+## 5                  30                   96  0.9926 3.33      0.64    10.7 Other
+## 6                   4                   83  0.9956 2.89      0.30    10.1 Other</code></pre>
 <pre class="r"><code>table(train_set_upsampled$Class)</code></pre>
 <pre><code>## 
 ## Other     5     6     7 
@@ -503,32 +503,28 @@ print(glue(&quot;train_set ncol: {ncol(train_set)}&quot;))</code></pre>
 </div>
 <div id="explanation-of-how-the-algorithm-works" class="section level3">
 <h3>Explanation of how the algorithm works</h3>
-<p>XGBoost for multiclass classification problems works as follows: 1)
-At first it initializes some probability for each row and it’s usually 1
-divided by the number of classes. So if we have e.g. 3 distinct classes,
-the initial probability could be set to 1/3 for each row for each class.
-2) Then it calculates the gradient for each row and the gradient is the
-derivative of the loss function with respect to the derivative of the
-predicted probability. These gradients represent how much the loss
-function would change if the predicted probabilities were adjusted. They
-guide the decision trees e.g. to make splits. In case of multiclass in
-order to evaluate how wrong the algorithm is, it could use Cross-Entropy
-as the loss function. So it would have gradients for each row in the
-data set and then it would use these gradient as “pseudo-residuals” and
-create the first decision tree based on these residuals. The output of
-the tree would be logits: as many logits as there are classes to
-predict. So in case of 3 classes, the tree would output 3 logits (1
-logit for 1 class) and it would convert these logits to probabilities by
-using the softmax function. 3) Then it would take each of these
-probabilities, multiply it by the learning rate and the whole results
-would be added to the previous probabilities with respect to each class.
-This way it would get new predicted probabilities. Then it would come to
-further iterations, calculate gradients, create another decision trees
-based on these gradients, treating them as “pseudo-residuals”, it would
-again obtain some logits, transform them to probabilities and multiply
-them by the learning rate and update the previous probabilities and so
-on… 4) Points 2-4 are repeated in order to minimize the loss function
-and therefore to make the predictions as accurate as possible</p>
+<p>XGBoost for multiclass classification problems works as follows:</p>
+<ol style="list-style-type: decimal">
+<li>We start with initial logits for each class in each row in the
+training set.</li>
+<li>We calculate negative gradients or pseudo residuals based on the
+logits from step 1. We would most likely use cross-entropy for the loss
+function and softmax for the prediction function.</li>
+<li>We would fit a decision tree based on the negative gradients. The
+tree would learn relationships between the features and the negative
+gradients. The tree would output its predictions of the negative
+gradients from the previous step for each class. We would obtain as many
+predicted negative gradients as there are classes to predict.</li>
+<li>For each row in the training data set, we would get these predicted
+by the decision tree negative gradients for respective classes and
+multiply them by the learning rate and then add the result to the
+previous logits, in this case from step 1.</li>
+<li>After having the logits updated, we would calculate the new negative
+gradients, fit another tree, obtain another predicted negative
+gradients, scale them by the learning rate and add the the previous
+logits. We would repeat the process until convergence or the limit of
+iterations.</li>
+</ol>
 </div>
 <div id="specifying-hyperparameters" class="section level3">
 <h3>Specifying hyperparameters</h3>
@@ -555,54 +551,55 @@ xgb_tune &lt;- train(x = train_set_upsampled[,-12],
                   method= &quot;xgbTree&quot;,
                   verbose = TRUE)</code></pre>
 <pre><code>## + Fold1: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
-## [01:04:06] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:37:04] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold1: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
 ## + Fold1: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
-## [01:04:31] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:37:25] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold1: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
 ## + Fold1: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
-## [01:05:01] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:37:51] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold1: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
 ## + Fold1: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
-## [01:05:34] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:38:15] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold1: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
 ## + Fold2: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
-## [01:06:05] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:38:38] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold2: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
 ## + Fold2: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
-## [01:06:34] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:38:58] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold2: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
 ## + Fold2: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
-## [01:07:02] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:39:23] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold2: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
 ## + Fold2: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
-## [01:07:29] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:39:47] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold2: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
 ## + Fold3: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
-## [01:07:53] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:40:12] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold3: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
 ## + Fold3: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
-## [01:08:17] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:40:31] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold3: eta=0.1, max_depth= 8, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
 ## + Fold3: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
-## [01:08:48] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:40:57] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold3: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=0.75, nrounds=1500 
 ## + Fold3: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
-## [01:09:15] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
+## [13:41:21] WARNING: src/c_api/c_api.cc:935: `ntree_limit` is deprecated, use `iteration_range` instead.
 ## - Fold3: eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1.00, nrounds=1500 
 ## Aggregating results
 ## Selecting tuning parameters
-## Fitting nrounds = 1500, max_depth = 10, eta = 0.1, gamma = 0.05, colsample_bytree = 0.5, min_child_weight = 1, subsample = 1 on full training set</code></pre>
+## Fitting nrounds = 1000, max_depth = 10, eta = 0.1, gamma = 0.05, colsample_bytree = 0.5, min_child_weight = 1, subsample = 1 on full training set</code></pre>
 </div>
 <div id="selecting-model-with-the-best-hyperparameters" class="section level3">
 <h3>Selecting model with the best hyperparameters</h3>
 <pre class="r"><code>xgb_tune$bestTune</code></pre>
 <pre><code>##   nrounds max_depth eta gamma colsample_bytree min_child_weight subsample
-## 8    1500        10 0.1  0.05              0.5                1         1</code></pre>
+## 7    1000        10 0.1  0.05              0.5                1         1</code></pre>
 </div>
 <div id="using-the-model-with-the-best-hyperparameters" class="section level3">
 <h3>Using the model with the best hyperparameters</h3>
-<pre class="r"><code>train_control &lt;- trainControl(method = &quot;cv&quot;,
+<pre class="r"><code>set.seed(123)
+train_control &lt;- trainControl(method = &quot;cv&quot;,
                               number=3,
                               verboseIter = TRUE,
                               allowParallel = TRUE)
@@ -619,16 +616,16 @@ xgb_model &lt;- train(x = train_set_upsampled[,-12],
                    tuneGrid = final_grid,
                    method = &quot;xgbTree&quot;,
                    verbose = TRUE)</code></pre>
-<pre><code>## + Fold1: nrounds=1500, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
-## - Fold1: nrounds=1500, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
-## + Fold2: nrounds=1500, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
-## - Fold2: nrounds=1500, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
-## + Fold3: nrounds=1500, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
-## - Fold3: nrounds=1500, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
+<pre><code>## + Fold1: nrounds=1000, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
+## - Fold1: nrounds=1000, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
+## + Fold2: nrounds=1000, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
+## - Fold2: nrounds=1000, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
+## + Fold3: nrounds=1000, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
+## - Fold3: nrounds=1000, eta=0.1, max_depth=10, gamma=0.05, colsample_bytree=0.5, min_child_weight=1, subsample=1 
 ## Aggregating results
 ## Fitting final model on full training set</code></pre>
 <pre class="r"><code>head(predict(xgb_model, test_set))</code></pre>
-<pre><code>## [1] 5     5     6     Other Other 6    
+<pre><code>## [1] 6 5 6 5 6 6
 ## Levels: Other 5 6 7</code></pre>
 <pre class="r"><code>xgb.pred &lt;- predict(xgb_model, test_set)</code></pre>
 </div>
@@ -641,33 +638,33 @@ confusionMatrix(as.factor(xgb.pred),
 ## 
 ##           Reference
 ## Prediction Other   5   6   7
-##      Other    36   4   5   5
-##      5        20 258  75   4
-##      6        23  96 415  88
-##      7        11   6  54 123
+##      Other    35   6   9   3
+##      5        24 234  73   8
+##      6        24 118 415  83
+##      7         7   6  52 126
 ## 
 ## Overall Statistics
-##                                           
-##                Accuracy : 0.6803          
-##                  95% CI : (0.6533, 0.7064)
-##     No Information Rate : 0.4489          
-##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
-##                                           
-##                   Kappa : 0.5106          
-##                                           
-##  Mcnemar&#39;s Test P-Value : 3.285e-06       
+##                                          
+##                Accuracy : 0.6623         
+##                  95% CI : (0.635, 0.6888)
+##     No Information Rate : 0.4489         
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16      
+##                                          
+##                   Kappa : 0.4815         
+##                                          
+##  Mcnemar&#39;s Test P-Value : 1.592e-06      
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: Other Class: 5 Class: 6 Class: 7
-## Sensitivity               0.40000   0.7088   0.7559   0.5591
-## Specificity               0.98764   0.8847   0.6929   0.9292
-## Pos Pred Value            0.72000   0.7227   0.6672   0.6340
-## Neg Pred Value            0.95396   0.8776   0.7770   0.9057
+## Sensitivity               0.38889   0.6429   0.7559   0.5727
+## Specificity               0.98411   0.8778   0.6662   0.9352
+## Pos Pred Value            0.66038   0.6903   0.6484   0.6597
+## Neg Pred Value            0.95299   0.8529   0.7702   0.9089
 ## Prevalence                0.07359   0.2976   0.4489   0.1799
-## Detection Rate            0.02944   0.2110   0.3393   0.1006
-## Detection Prevalence      0.04088   0.2919   0.5086   0.1586
-## Balanced Accuracy         0.69382   0.7968   0.7244   0.7442</code></pre>
+## Detection Rate            0.02862   0.1913   0.3393   0.1030
+## Detection Prevalence      0.04334   0.2772   0.5233   0.1562
+## Balanced Accuracy         0.68650   0.7603   0.7110   0.7540</code></pre>
 <ol style="list-style-type: decimal">
 <li>Accuracy Score: Proportion of correctly classified observations</li>
 <li>No Information Rate: If we were to guess the most frequent class,

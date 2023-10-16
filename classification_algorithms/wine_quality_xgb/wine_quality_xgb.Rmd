@@ -96,10 +96,12 @@ table(train_set_upsampled$Class)
 ### Explanation of how the algorithm works
 
 XGBoost for multiclass classification problems works as follows:
-1) At first it initializes some probability for each row and it's usually 1 divided by the number of classes. So if we have e.g. 3 distinct classes, the initial probability could be set to 1/3 for each row for each class. 
-2) Then it calculates the gradient for each row and the gradient is the derivative of the loss function with respect to the derivative of the predicted probability. These gradients represent how much the loss function would change if the predicted probabilities were adjusted. They guide the decision trees e.g. to make splits. In case of multiclass in order to evaluate how wrong the algorithm is, it could use Cross-Entropy as the loss function. So it would have gradients for each row in the data set and then it would use these gradient as "pseudo-residuals" and create the first decision tree based on these residuals. The output of the tree would be logits: as many logits as there are classes to predict. So in case of 3 classes, the tree would output 3 logits (1 logit for 1 class) and it would convert these logits to probabilities by using the softmax function.
-3) Then it would take each of these probabilities, multiply it by the learning rate and the whole results would be added to the previous probabilities with respect to each class. This way it would get new predicted probabilities. Then it would come to further iterations, calculate gradients, create another decision trees based on these gradients, treating them as "pseudo-residuals", it would again obtain some logits, transform them to probabilities and multiply them by the learning rate and update the previous probabilities and so on...
-4) Points 2-4 are repeated in order to minimize the loss function and therefore to make the predictions as accurate as possible
+
+1. We start with initial logits for each class in each row in the training set.
+2. We calculate negative gradients or pseudo residuals based on the logits from step 1. We would most likely use cross-entropy for the loss function and softmax for the prediction function. 
+3. We would fit a decision tree based on the negative gradients. The tree would learn relationships between the features and the negative gradients. The tree would output its predictions of the negative gradients from the previous step for each class. We would obtain as many predicted negative gradients as there are classes to predict. 
+4. For each row in the training data set, we would get these predicted by the decision tree negative gradients for respective classes and multiply them by the learning rate and then add the result to the previous logits, in this case from step 1.
+5. After having the logits updated, we would calculate the new negative gradients, fit another tree, obtain another predicted negative gradients, scale them by the learning rate and add the the previous logits. We would repeat the process until convergence or the limit of iterations.
 
 
 ### Specifying hyperparameters
@@ -141,6 +143,7 @@ xgb_tune$bestTune
 ### Using the model with the best hyperparameters
 
 ```{r}
+set.seed(123)
 train_control <- trainControl(method = "cv",
                               number=3,
                               verboseIter = TRUE,
