@@ -479,19 +479,24 @@ colnames(test_set)[32] <- "Income"
 
 #### How the algorithm works:
 1. At the beginning, it assignes a "default" probability to each row in the data set. In case of binary classification, the algorithm would likely assign 0.5 probability to each row. 
-2. Decision trees are created. Usually the amount of trees ranges from 500 to 2000. Each decision tree is build based on the residuals from the prediction in step 1. So we would get only 0.5 and -0.5 residuals. 
+2. Decision tree is created. Usually the total amount of trees ranges from 500 to 2000 (1 per iteration), but it's customizable. Each decision tree is build based on the residuals from the previous prediction. So at the beginning we would get only 0.5 and -0.5 residuals.
 3. The algorithm would calculate similarity weights for each root and leaf node and then calculate gains. The decision trees might look like this:
+
 
 ```{r,fig.width=10}
 ggplot() + 
     background_image(readPNG("images/trees.png"))
 ```
-4. The algorithm would activate the sigmoid function: sigmoid(log(p/1-p) + learning rate * similarity weight) which results in 1/(1+e^log(p/1-p) + learning rate * similarity weight). Each row in the data set would follow a specific path in the decision trees and obtain a similarity weight which would be then passed to the sigmoid function to calculate the probability for each row.
+
+
+4. The algorithm would activate the sigmoid function: sigmoid(log(p/1-p) + learning rate * similarity weight) which results in 1/(1+e^(-log(p/1-p) + learning rate * similarity weight)). Each row in the data set would follow a specific path in the decision trees and obtain a similarity weight which would be then passed to the sigmoid function to calculate the probability for each row.
 5. After obtaining the probabilities, the algorithm would then calculate the residuals
 6. In the next iteration, new decision tree would be created based on the new residuals, new similarity weights, gains and probabilities would be computed
 7. The process would repeat iteratively, usually 500 to 2000 times.
 8. The method (cv stand for cross-validation)
 In this case when the number = 3 it means that the train set will be divided into 3 parts (samples) and the model will be calculated on one of them and tested on the remaining two, continuing this process for each part (sample)
+9. The whole process would result in having minimized the residuals and therefore improving the model
+
 
 ```{r}
 # Doing XGBoost for classification purposes.
