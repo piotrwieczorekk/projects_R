@@ -1,0 +1,1 @@
+--- IMPORTANT --- the whole executed code can be seen via html: https://piotrwieczorekk.github.io/projects_R/classification_algorithms/Logistic_regression/CSGO_round_pred/csgo_round_winner_prediction.html alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
