@@ -1,0 +1,516 @@
+---
+title: "CSGO Round T Side Win Prediction"
+author: "Piotr Wieczorek"
+date: "2023-10-23"
+output: 
+  html_document: 
+    toc: yes
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)
+```
+
+## Libraries 
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(janitor)
+library(readxl)
+library(caret)
+library(glue)
+library(hrbrthemes)
+library(scales)
+library(fastDummies)
+library(coefplot)
+library(gridExtra)
+library(ROCit)
+library(pROC)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Reading and cleaning the data
+
+```{r}
+df <- read.csv('csgo_round_snapshots.csv')
+```
+
+### Looking for NA values
+
+```{r}
+sum(is.na(df)) #no NA's
+```
+### Checking colnames
+
+```{r}
+colnames(df)
+```
+
+```{r}
+head(df)
+```
+
+
+```{r}
+df %>%
+  select_if(is.character) 
+```
+
+### Changing map and round_winner to factor, recoding bomb_planted to 0 and 1 
+
+```{r}
+df <- df %>%
+  mutate(across(c("map","round_winner"),as.factor)) %>%
+  mutate(bomb_planted = ifelse(bomb_planted == FALSE,0,1))
+```
+
+```{r}
+head(df)
+```
+
+### Map frequency plot
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  group_by(map) %>%
+  summarise(map_freq = n()) %>%
+  arrange(desc(map_freq)) %>%
+  mutate(map=fct_reorder(map,map_freq)) %>%
+  ggplot(aes(x=map,y=map_freq)) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label = map_freq), vjust = -0.5, size = 3.5) +
+  labs(title = "Map Frequency") +
+  theme_ft_rc()
+```
+
+
+### Round winner frequency plot 
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  group_by(round_winner) %>%
+  summarise(group_winner_freq = n()) %>%
+  ggplot(aes(x=round_winner,y=group_winner_freq)) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label = group_winner_freq), vjust = -0.5, size = 3.5) +
+  labs(title = "Round Winner Frequency") +
+  ylab('Rounds won') + 
+  xlab('Round winner')+
+  theme_ft_rc()
+```
+
+
+
+### Analyzing T side weapons
+
+```{r}
+df %>%
+  summarize(across(starts_with("t_weapon"),~ sum(.x)))
+```
+
+```{r}
+df_t_weapons <- df %>%
+  summarize(across(starts_with("t_weapon"),~ sum(.x))) %>%
+  pivot_longer(everything()) %>%
+  arrange(desc(value))
+```
+
+```{r}
+df_t_weapons
+```
+
+### T pistol frequency plot
+
+```{r,fig.width=10,fig.height=6}
+df_t_weapons %>%
+  filter(name %in% c("t_weapon_glock",
+                     "t_weapon_deagle",
+                     "t_weapon_tec9",
+                     "t_weapon_p250")) %>%
+  mutate(name = str_remove_all(string=name,pattern="t_weapon_")) %>%
+  mutate(name = str_to_upper(name)) %>%
+  mutate(name = fct_reorder(name,value)) %>%
+  ggplot(aes(x=name,y=value)) +
+  geom_bar(stat="identity") + 
+  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
+  labs(title = "T Pistol Weapons Frequency") +
+  ylab('Pistol') + 
+  xlab('Pistol frequency')+
+  theme_ft_rc()
+```
+
+
+```{r}
+table(df$bomb_planted) # there are only rounds in the data set where the bomb was planted
+```
+
+### T SMG weapons frequency
+
+```{r,fig.width=10,fig.height=6}
+df_t_weapons %>%
+  filter(name %in% c("t_weapon_mac10",
+                     "t_weapon_mp5sd",
+                     "t_weapon_ump45",
+                     "t_weapon_p90",
+                     "t_weapon_bizon")) %>%
+  mutate(name = str_remove_all(string=name,pattern="t_weapon_")) %>%
+  mutate(name = str_to_upper(name)) %>%
+  mutate(name = fct_reorder(name,value)) %>%
+  filter(value >100) %>%
+  ggplot(aes(x=name,y=value)) +
+  geom_bar(stat="identity") + 
+  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
+  labs(title = "T SMG Weapons Frequency (only > 100)") +
+  ylab('SMG') + 
+  xlab('SMG frequency')+
+  theme_ft_rc()
+```
+
+### T rifle weapons frequency
+
+```{r,fig.width=10,fig.height=6}
+df_t_weapons %>%
+  filter(name %in% c("t_weapon_ak47","t_weapon_sg553","t_weapon_awp",
+           "t_weapon_galilar","t_weapon_ssg08","t_weapon_g3sg1")) %>%
+  mutate(name = str_remove_all(string=name,pattern="t_weapon_")) %>%
+  mutate(name = str_to_upper(name)) %>%
+  mutate(name = fct_reorder(name,value)) %>%
+  filter(value > 100) %>%
+  ggplot(aes(x=name,y=value)) +
+  geom_bar(stat="identity") + 
+  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
+  labs(title = "T Rifle Weapons Frequency (only > 100)") +
+  ylab('Rifle') + 
+  xlab('Rifle frequency')+
+  theme_ft_rc()
+```
+
+
+### Analyzing CT side weapons
+
+```{r}
+df_ct_weapons <- df %>%
+  summarize(across(starts_with("ct_weapon"),~ sum(.x))) %>%
+  pivot_longer(everything()) %>%
+  arrange(desc(value))
+```
+
+```{r}
+df_ct_weapons
+```
+
+### CT SMG weapons frequency
+
+```{r,fig.width=10,fig.height=6}
+df_ct_weapons %>%
+  filter(name %in% c("ct_weapon_mp9","ct_weapon_ump45",
+           "ct_weapon_p90","ct_weapon_mp5sd")) %>%
+  mutate(name = str_remove_all(string=name,pattern="ct_weapon_")) %>%
+  mutate(name = str_to_upper(name)) %>%
+  mutate(name = fct_reorder(name,value)) %>%
+  filter(value > 100) %>%
+  ggplot(aes(x=name,y=value)) +
+  geom_bar(stat="identity") + 
+  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
+  labs(title = "CT SMG Weapons Frequency (only > 100)") +
+  ylab('SMG') + 
+  xlab('SMG frequency')+
+  theme_ft_rc()
+```
+
+
+
+### CT pistol weapons frequency
+
+```{r,fig.width=10,fig.height=6}
+df_ct_weapons %>%
+  filter(name %in% c("ct_weapon_usps","ct_weapon_deagle","ct_weapon_p250",
+           "ct_weapon_p2000","ct_weapon_c75auto","ct_weapon_fiveseven")) %>%
+  mutate(name = str_remove_all(string=name,pattern="ct_weapon_")) %>%
+  mutate(name = str_to_upper(name)) %>%
+  mutate(name = fct_reorder(name,value)) %>%
+  ggplot(aes(x=name,y=value)) +
+  geom_bar(stat="identity") + 
+  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
+  labs(title = "CT Pistol Weapons Frequency") +
+  ylab('Pistol') + 
+  xlab('Pistol frequency')+
+  theme_ft_rc()
+```
+
+
+### CT rifle weapons frequency
+
+```{r,fig.width=10,fig.height=6}
+df_ct_weapons %>%
+  filter(name %in% c("ct_weapon_m4a4","ct_weapon_awp","ct_weapon_aug",
+           "ct_weapon_m4a1s","ct_weapon_famas","ct_weapon_ssg08",
+           "ct_weapon_scar20")) %>%
+  mutate(name = str_remove_all(string=name,pattern="ct_weapon_")) %>%
+  mutate(name = str_to_upper(name)) %>%
+  mutate(name = fct_reorder(name,value)) %>%
+  filter(value > 100) %>%
+  ggplot(aes(x=name,y=value)) +
+  geom_bar(stat="identity") + 
+  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
+  labs(title = "CT Rifle Weapons Frequency (only > 100)") +
+  ylab('Rifle') + 
+  xlab('Rifle frequency')+
+  theme_ft_rc()
+```
+
+### Looking for near-zero-variance variables
+
+```{r}
+df %>%
+select(12:97) %>%
+  mutate(across(everything(),as.factor)) %>%
+  summary()
+```
+
+```{r}
+df%>%
+  select(starts_with("ct_weapon")) %>%
+  colnames()
+```
+### Deleting zero or near-zero-variance variables
+
+```{r}
+df <- df %>%
+  select(-c("ct_weapon_bizon","t_weapon_bizon","t_weapon_elite",
+            "ct_weapon_elite","ct_weapon_g3sg1","ct_weapon_m249",
+            "t_weapon_m249","t_weapon_mag7","ct_weapon_mag7",
+            "ct_weapon_mp5sd","t_weapon_mp5sd","ct_weapon_mp7",
+            "t_weapon_mp7","t_weapon_mp9","ct_weapon_negev",
+            "t_weapon_negev","ct_weapon_nova","t_weapon_nova",
+            "ct_weapon_p90","t_weapon_p90","ct_weapon_r8revolver",
+            "t_weapon_r8revolver", "ct_weapon_sawedoff","t_weapon_sawedoff",
+            "ct_weapon_scar20","t_weapon_scar20","ct_weapon_xm1014",
+            "t_weapon_xm1014","t_weapon_fiveseven","t_weapon_p2000",
+            "ct_weapon_tec9","t_grenade_incendiarygrenade","ct_grenade_molotovgrenade",
+            "ct_grenade_decoygrenade","t_grenade_decoygrenade"))
+```
+
+```{r}
+df <- df %>%
+  select(-c("bomb_planted"))
+```
+
+```{r}
+head(df)
+```
+
+
+```{r}
+df %>%
+  select(11:61) %>%
+  mutate(across(everything(), as.factor)) %>%
+  summary()
+
+### There are some issues with the data set, because it's impossible for the T side to have 6 players (there are 5 players in each team) and it's also extremely unlikely for the CT side to have 0 players alive (meaning all team members were dead) just once in 120 000 + observations.
+
+### It would be pointless to include data about rounds where there are 0 CT players since it results in the end of the round and therefore the T side would win the round - we wouldn't have to consider other variables at all
+
+### When there are 0 T players alive it wouldn't necesesserily (but most likely) mean that CT players have won the round because the T players can plant and detonate the bomb and die while doing so, but if the bomb explodes, T players win the round. 
+
+### Because of the issues with the data set I decided to completely omit data where there are 0 alive players either from the CT side or the T side
+```
+### Filtering out data that doesn't make sense or has only single observation among 120 000 + observations
+
+```{r}
+df <- df %>%
+  filter(!ct_players_alive %in% c(0)) %>%
+  filter(!t_players_alive %in% c(0,6)) %>%
+  filter(!t_weapon_cz75auto %in% c(6)) %>%
+  filter(!t_grenade_flashbang %in% c(7)) %>%
+  filter(!ct_grenade_smokegrenade %in% c(6)) %>%
+  filter(!t_grenade_smokegrenade %in% c(9)) %>%
+  filter(!ct_grenade_flashbang %in% c(6,7)) %>%
+  filter(!ct_weapon_usps %in% c(6,7,8,9,10))
+```
+
+```{r}
+unique(df$t_weapon_glock) # this also doesn't make sense - there are 5 players in the T side and they can have max 5 glocks total 
+```
+
+```{r}
+df <- df %>% # these variables had almost no diversity or didn't make sense but I hadn't noticed that before
+  select(-c("t_weapon_aug","t_weapon_famas","t_weapon_g3sg1",
+            "ct_weapon_galilar","ct_weapon_glock","t_weapon_m4a1s",
+            "ct_weapon_mac10","t_weapon_usps","ct_weapon_p2000"))
+```
+
+### Aggregating categories to further avoid near-zero-variance variables
+
+```{r}
+df <- df %>%
+  mutate_if(is.numeric, as.factor)%>%
+  mutate(ct_weapon_ak47 = fct_collapse(ct_weapon_ak47,
+                                       "at_least_2" = c('2','3','4')),
+         t_weapon_ak47 = fct_collapse(t_weapon_ak47,
+                                      "at_least_4" = c('4','5')),
+         ct_weapon_aug = fct_collapse(ct_weapon_aug,
+                                      "at_least_2" = c('2','3','4','5')),
+         ct_weapon_awp = fct_collapse(ct_weapon_awp,
+                                      "at_least_2" = c('2','3','4','5')),
+         t_weapon_awp = fct_collapse(t_weapon_awp,
+                                     'at_least_1' = c('1','2','3','4')),
+         ct_weapon_cz75auto = fct_collapse(ct_weapon_cz75auto,
+                                           'at_least_2' = c('2','3','4','5')),
+         t_weapon_cz75auto = fct_collapse(t_weapon_cz75auto,
+                                          'at_least_2' = c('2','3','4','5')),
+         ct_weapon_famas = fct_collapse(ct_weapon_famas,
+                                        'at_least_2' = c('2','3','4','5')),
+         t_weapon_galilar = fct_collapse(t_weapon_galilar,
+                                       'at_least_2' = c('2','3','4','5')),
+         ct_weapon_m4a1s = fct_collapse(ct_weapon_m4a1s,
+                                        'at_least_1' = c('1','2','3')),
+         ct_weapon_m4a4 = fct_collapse(ct_weapon_m4a4,
+                                       'at_least_3' = c('3','4','5')),
+         t_weapon_m4a4 = fct_collapse(t_weapon_m4a4,
+                                      'at_least_1' = c('1','2','3')),
+         t_weapon_mac10  = fct_collapse(t_weapon_mac10,
+                                        'at_least_2' = c('2','3','4','5')),
+         ct_weapon_mp9 = fct_collapse(ct_weapon_mp9,
+                                      'at_least_2' = c('2','3','4','5')),
+         ct_weapon_sg553 = fct_collapse(ct_weapon_sg553,
+                                        'at_least_2' = c('2','3','4')),
+         t_weapon_sg553 = fct_collapse(t_weapon_sg553,
+                                       'at_least_2' = c('2','3','4','5')),
+         ct_weapon_ssg08 = fct_collapse(ct_weapon_ssg08,
+                                        'at_least_1' = c('1','2','3','4')),
+         t_weapon_ssg08 = fct_collapse(t_weapon_ssg08,
+                                       'at_least_1' = c('1','2','3')),
+         ct_weapon_ump45 = fct_collapse(ct_weapon_ump45,
+                                        'at_least_1' = c('1','2','3')),
+         t_weapon_ump45 = fct_collapse(t_weapon_ump45,
+                                       'at_least_1' = c('1','2','3')),
+         ct_weapon_deagle = fct_collapse(ct_weapon_deagle,
+                                         'at_least_3' = c('3','4','5')),
+         t_weapon_deagle = fct_collapse(t_weapon_deagle,
+                                        'at_least_3' = c('3','4','5')),
+         ct_weapon_fiveseven = fct_collapse(ct_weapon_fiveseven,
+                                            'at_least_2' = c('2','3','4','5')),
+         ct_weapon_p250 = fct_collapse(ct_weapon_p250,
+                                       'at_least_2' = c('2','3','4','5')),
+         t_weapon_p250  = fct_collapse(t_weapon_p250,
+                                       'at_least_2' = c('2','3','4','5')),
+         t_weapon_tec9 = fct_collapse(t_weapon_tec9,
+                                      'at_least_1' = c('1','2','3','4')),
+         t_grenade_hegrenade = fct_collapse(t_grenade_hegrenade,
+                                            'at_least_3' = c('3','4','5')))
+```
+
+```{r}
+df <- df %>%
+  mutate(across(c("ct_score","t_score","ct_health",
+                  "t_health","ct_armor","t_armor",
+                  "ct_money","t_money","time_left"),as.numeric))
+```
+
+## Modeling part
+
+### Data partition
+
+```{r}
+set.seed(778)
+data_partition <- createDataPartition(df$round_winner, p = 0.75, list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(nrow(train_set))
+print(nrow(test_set))
+```
+
+```{r}
+head(train_set)
+```
+
+```{r}
+head(test_set)
+```
+### Creating dummy variables
+
+```{r}
+train_set_w_dummies <- fastDummies::dummy_cols(train_set[,-52], remove_first_dummy = TRUE, remove_selected_columns = TRUE,omit_colname_prefix = TRUE)
+
+train_set <- cbind(train_set_w_dummies,train_set$round_winner)
+
+test_set_w_dummies <- fastDummies::dummy_cols(test_set[,-52], remove_first_dummy = TRUE, remove_selected_columns = TRUE,omit_colname_prefix = TRUE)
+
+test_set <- cbind(test_set_w_dummies,test_set$round_winner)
+```
+
+
+```{r}
+head(train_set)
+```
+
+
+```{r}
+colnames(train_set)[139] <- 'round_winner'
+colnames(test_set)[139] <- 'round_winner'
+```
+
+### Model formula
+
+
+```{r}
+first_model <- glm(formula = round_winner ~ ., data = train_set, family = "binomial")
+summary(first_model)
+```
+
+### Prediction
+
+```{r}
+prediction <- predict(object = first_model, test_set, type = "response")
+```
+
+
+```{r}
+head(prediction)
+```
+
+
+```{r}
+prediction_group <- ifelse(prediction >= 0.5, "T", "CT")
+```
+
+```{r}
+head(prediction_group)
+```
+
+
+### Confusion matrix
+
+
+```{r}
+confusionMatrix(data = as.factor(prediction_group), reference = test_set$round_winner,
+    positive = "T")
+```
+
+### exponent of coefficients
+
+```{r}
+exp(first_model$coefficients)
+```
+
+### ROC curve
+
+```{r}
+sim_roc <- roc(response = test_set$round_winner, predictor = prediction,
+    levels = c("T", "CT"))
+```
+
+```{r}
+ggroc(sim_roc, legacy.axes = TRUE) + annotate("text", x = 0.5,
+    y = 0.5, label = paste0("AUC: ", round(auc(sim_roc), digits = 2))) +
+    theme_minimal()
+```
+
