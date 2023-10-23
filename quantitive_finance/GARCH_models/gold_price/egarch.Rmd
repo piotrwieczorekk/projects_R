@@ -1,0 +1,219 @@
+---
+title: "eGARCH Model -  Gold (ozt) / U.S. Dollar (XAUUSD) volatility and return rates prediction"
+author: "Piotr Wieczorek"
+date: "2023-10-12"
+output: 
+  html_document: 
+    theme: united
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message = FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+
+## Libraries
+
+```{r}
+library(xts)
+library(quantmod)
+library(tidyverse)
+library(lubridate)
+library(tseries)
+library(rugarch)
+library(lmtest)
+library(moments)
+library(forecast)
+```
+
+## Reading and cleaning the data
+
+```{r}
+df <- read.csv('xauusd_d.csv')
+```
+
+### Selecting only relevant columns
+
+```{r}
+df <- df %>%
+  select(Data, Zamkniecie)
+```
+
+### Renaming columns
+
+```{r}
+colnames(df) <- c("Date","Close")
+```
+
+```{r}
+head(df)
+```
+
+### Changing Date column to date format
+
+```{r}
+df <- df %>%
+  mutate(Date = lubridate::ymd(Date))
+```
+
+### Changing the dataframe to an xts object
+
+```{r}
+data_xts <- xts(df$Close,order.by=df$Date)
+```
+
+```{r}
+head(data_xts,10)
+```
+```{r}
+colnames(data_xts) <- c("Close")
+```
+
+### Calculating daily log return rate
+
+```{r}
+data_xts$log_return_rate <- PerformanceAnalytics::Return.calculate(data_xts$Close,method="log")
+```
+
+```{r}
+head(data_xts,10)
+```
+### Price plot
+
+```{r,fig.width=10,fig.height=6}
+chartSeries(data_xts$Close,name = 'Gold (ozt) / U.S. Dollar (XAUUSD) Price')
+```
+
+### Daily log return rate plot
+
+```{r,fig.width=10,fig.height=6}
+chartSeries(data_xts$log_return_rate, name = 'Gold (ozt) / U.S. Dollar (XAUUSD) Daily Logarithmic Return Rate')
+```
+
+### Stationarity test
+
+```{r}
+adf.test(data_xts[-1,"log_return_rate"])
+```
+### ACF plot
+
+```{r,fig.width=8,fig.height=6}
+acf(data_xts[-1,"log_return_rate"])
+```
+
+### PACF plot
+
+```{r,fig.width=8,fig.height=6}
+pacf(data_xts[-1,"log_return_rate"])
+```
+
+## Modelling
+
+### Specificiation of eGARCH model
+
+#### I used ARMA(1,1) or ARIMA(1,0,1) for the mean model based on the ACF and PACF plot - there is very little autocorrelation in the time series so it would make more sense to not include autoregression and moving average in the mean model. The mean model in such case is essentially just the constant (mu). Garch order is set to (1,1) as it's very typical to use such model and eventually change it to observe if the results are significant
+
+```{r}
+garch_model_spec <- ugarchspec(
+  variance.model = list(model = "eGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(0, 0)),
+  distribution = "ged"
+)
+```
+
+### Fitting the model 
+
+```{r}
+garch_model_fit <- ugarchfit(
+  spec = garch_model_spec,
+  data = data_xts[-1, "log_return_rate"]
+)
+```
+
+
+```{r}
+garch_model_fit
+```
+
+
+
+
+
+#### The model exhibits very high value of beta and very low value of alpha. This can indicate that:
+1. beta represents the long-term or memory component of the model. In this case, Gold (ozt) / U.S. Dollar (XAUUSD) logarithmic daily return rate exhibits a high degree of persistence in volatility, meaning that volatility tends to persist over time. In the context of daily stock return rates, this implies that once the market experiences volatility, it is likely to continue to be volatile over several subsequent days
+2. alpha represents the short-term fluctuations. Based on very small value of this coefficient one could conclude that the model is not very responsive to recent volatility shocks
+3. Since I'm using eGARCH, this model also contains gamma parameter. If this paramater is statistically significant and positive, one could conclude that there is a leverage effect which means that negative returns have greater impact on future volatility than positive returns.
+
+### Additional plots
+
+#### Red lines determine ~95% of the observations
+
+```{r,fig.width=8,fig.height=6}
+plot(garch_model_fit,which=1)
+```
+
+#### Everything above green line is in the area of 1% highest return rates
+#### Everything under red line is in the area of 1% lowest return rates
+
+```{r,fig.width=8,fig.height=6}
+plot(garch_model_fit,which=2)
+```
+
+#### This plot pictures how well conditional SD covers absolute values of the return rates.
+
+```{r,fig.width=8,fig.height=6}
+plot(garch_model_fit,which=3)
+```
+
+
+#### ACF of Standardized Residuals
+
+```{r,fig.width=8,fig.height=6}
+plot(garch_model_fit,which=10)
+```
+#### ACF of Squared Standardized Residuals
+
+```{r,fig.width=8,fig.height=6}
+plot(garch_model_fit,which=11)
+```
+
+#### Standardized Residuals density
+
+```{r,fig.width=8,fig.height=6}
+plot(garch_model_fit,which=8)
+```
+
+### Prediction
+
+```{r}
+forc <- ugarchforecast(garch_model_fit)
+```
+
+
+### Forecast plot
+
+#### Return rate prediction
+
+```{r}
+forc
+```
+
+```{r,fig.width=8,fig.height=6}
+plot(forc,which=1)
+```
+
+```{r,fig.width=8,fig.height=6}
+plot(fitted(forc))
+```
+
+#### Sigma prediction
+
+```{r,fig.width=8,fig.height=6}
+plot(sigma(forc))
+```
+
