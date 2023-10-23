@@ -1,0 +1,99 @@
+---
+title: "k-NN Classifier - Iris data set"
+author: "Piotr Wieczorek"
+date: "2023-10-17"
+output: 
+  html_document: 
+    toc: yes
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+
+## Libraries 
+```{r}
+library(tidyverse)
+library(caret)
+library(naniar)
+library(glue)
+library(class)
+```
+
+## Loading and exploring the data
+
+```{r}
+df <- iris
+```
+
+
+```{r}
+head(df)
+```
+
+### Data summary
+```{r}
+summary(df)
+```
+
+```{r}
+str(df)
+```
+
+```{r}
+naniar::miss_var_summary(iris)
+```
+
+### Scaling the data
+
+```{r}
+df[,1:4] <- sapply(df[,1:4], function(x) scale(x))
+```
+
+```{r}
+head(df)
+```
+
+### Data partitioning
+
+```{r}
+set.seed(560)
+data_partition <- caret::createDataPartition(y=df$Species,p=0.7,list=FALSE)
+
+train_set_features <- df[data_partition,1:4]
+train_set_target <- df[data_partition,5]
+
+test_set_features <- df[-data_partition,1:4]
+test_set_target <- df[-data_partition,5]
+```
+
+## k-NN model
+
+### Searching optimal "k" parameter
+```{r}
+set.seed(123)
+for (k in 1:10) {
+  pr <- knn(train_set_features, test_set_features, cl = train_set_target, k = k)
+  accuracy <- sum(pr == test_set_target) / length(test_set_target)
+  print(glue("k = {k}, Accuracy = {accuracy}"))
+}
+```
+
+### Fitting the model
+
+```{r}
+pr <- knn(train_set_features,test_set_features,cl=train_set_target,k=6)
+```
+
+### Confusion matrix
+```{r}
+confusionMatrix(as.factor(pr),as.factor(test_set_target))
+```
+
+
