@@ -1,0 +1,267 @@
+---
+title: "Stock Portfolio Based on Maximal Return Criterion"
+author: "Piotr Wieczorek"
+date: "2023-10-18"
+output: 
+  html_document: 
+    toc: yes
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message = FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(tidyquant)
+library(PortfolioAnalytics)
+library(ROI.plugin.quadprog)
+library(ROI.plugin.glpk)
+library(lubridate)
+```
+
+## Loading and cleaning the data
+
+
+```{r}
+tor_csv <- read.csv('tor_d.csv') #torpol
+pkn_csv <- read.csv('pkn_d.csv') #pkn orlen
+bdx_csv <- read.csv('bdx_d.csv') #budimex
+```
+
+
+
+```{r}
+tor_csv <- tor_csv %>%
+  select(c("Data","Zamkniecie")) %>%
+  mutate(Data = lubridate::ymd(Data)) %>%
+  filter(Data >= "2021-01-01") 
+
+colnames(tor_csv) <- c("Date","Close")  
+
+pkn_csv <- pkn_csv %>%
+  select(c("Data","Zamkniecie")) %>%
+  mutate(Data = lubridate::ymd(Data)) %>%
+  filter(Data >= "2021-01-01")
+
+colnames(pkn_csv) <- c("Date","Close") 
+
+bdx_csv <- bdx_csv %>%
+  select(c("Data","Zamkniecie")) %>%
+  mutate(Data = lubridate::ymd(Data)) %>%
+  filter(Data >= "2021-01-01")
+
+colnames(bdx_csv) <- c("Date","Close") 
+```
+
+
+```{r}
+print(head(tor_csv))
+print(head(pkn_csv))
+print(head(bdx_csv))
+```
+### Merging the data into one data frame
+
+
+```{r}
+df_merged <- list(bdx_csv, pkn_csv, tor_csv) %>% 
+  reduce(inner_join, by = "Date")
+
+colnames(df_merged) <- c("Date","Close_bdx","Close_pkn","Close_tor")
+print(head(df_merged))
+```
+
+### Creating an xts object
+
+```{r}
+xts_prices_merged <- xts(df_merged[, -1], order.by = df_merged$Date)
+```
+
+
+```{r}
+head(xts_prices_merged)
+```
+
+### Computing return rates
+
+```{r}
+xts_rates_merged <- xts_prices_merged %>%
+  PerformanceAnalytics::Return.calculate(method="discrete") %>%
+  stats::na.omit()
+
+print(head(xts_rates_merged))
+```
+
+## Maximum weight criterion
+
+### Specyfing assets names
+
+```{r}
+max_exp_return_portfolio <- PortfolioAnalytics::portfolio.spec(assets = c("bdx","pkn","tor"))
+```
+
+
+```{r}
+max_exp_return_portfolio
+```
+
+### Adding constraints to the algorithm
+
+```{r}
+# Add the full investment constraint that specifies the weights must sum to 1
+max_exp_return_portfolio <- PortfolioAnalytics::add.constraint(
+  portfolio = max_exp_return_portfolio,
+  type = "full_investment"
+)
+# Add the box constraint that ensure the weights are between 0.1 and 0.8
+max_exp_return_portfolio <- PortfolioAnalytics::add.constraint(
+  portfolio = max_exp_return_portfolio,
+  type = "box", min = 0.05, max = 0.8
+)
+```
+
+
+```{r}
+max_exp_return_portfolio
+```
+
+### Adding objective to the algorithm
+
+```{r}
+# Add objective to maximize mean returns
+max_exp_return_portfolio <- PortfolioAnalytics::add.objective(
+  portfolio = max_exp_return_portfolio,
+  # Maximize expected returns
+  type = "return",
+  # A character corresponding to a function name, mean()
+  name = "mean"
+)
+```
+
+### Running the algorithm
+
+```{r}
+# Run the optimization
+global_max_portfolio <- PortfolioAnalytics::optimize.portfolio(
+  R = xts_rates_merged,
+  portfolio = max_exp_return_portfolio,
+  # This defaults to the "glpk" solver
+  optimize_method = "glpk",
+  # Return additional information on the path or portfolios searched
+  trace = TRUE
+)
+# Examine returned portfolio list object
+global_max_portfolio
+```
+
+
+### Obtaining the weights
+
+```{r}
+weights <- purrr::pluck(.x = global_max_portfolio, "weights")
+```
+
+```{r}
+weights
+```
+
+```{r}
+sum(purrr::pluck(.x = global_max_portfolio, "weights"))
+```
+
+## Portfolio
+
+### Portfolio daily returns
+
+```{r}
+# Compute monthly portfolio returns
+portfolio_returns_xts_rebalanced_daily <-
+  PerformanceAnalytics::Return.portfolio(
+    R = xts_rates_merged,
+    weights = weights,
+    # Monthly re-balancing
+    rebalance_on = "months", # at the end of each month, we will have to manually adjust the weights of our stocks based on their values. Rebalancing financial portfolio makes sense if we want to keep the initial weights computed by the solver-type algorithm.
+    # Use simple/arithmetic chaining to aggregate returns
+    geometric = FALSE
+  ) %>%
+  `colnames<-`("Daily_portfolio_returns")
+# Examine
+head(portfolio_returns_xts_rebalanced_daily)
+```
+
+### Creating a data frame object of portfolio returns and data cleaning
+
+```{r}
+df_portfolio_returns <- as.data.frame(portfolio_returns_xts_rebalanced_daily)
+head(df_portfolio_returns)
+```
+
+
+
+```{r}
+df_portfolio_returns$Date = rownames(df_portfolio_returns)
+```
+
+
+```{r}
+rownames(df_portfolio_returns) <- NULL
+```
+
+```{r}
+df_portfolio_returns <- df_portfolio_returns %>%
+  mutate(Date = lubridate::ymd(Date))
+```
+
+```{r}
+head(df_portfolio_returns)
+```
+
+### Portfolio returns plot
+
+```{r,fig.width=10}
+df_portfolio_returns %>%
+ggplot(aes(x=Date,y=Daily_portfolio_returns)) +
+  geom_line(colour = "brown") + 
+  scale_x_date(breaks = scales::pretty_breaks(n = 6)) + 
+  ggtitle("Returns by Date") + 
+  labs(title="Daily Portfolio Returns") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_grey()
+```
+
+### Calculating the change of the initial investment price (1000 PLN)
+
+```{r}
+df_portfolio_returns$Investment_value <- 1000 * cumprod(1 + df_portfolio_returns$Daily_portfolio_returns)
+```
+
+### First 6 days of the investment
+```{r}
+head(df_portfolio_returns)
+```
+
+### Last 6 days of the investment
+
+```{r}
+tail(df_portfolio_returns)
+```
+
+### Final return rate
+
+```{r}
+(df_portfolio_returns[701,"Investment_value"] / df_portfolio_returns[1,"Investment_value"]) - 1
+```
+
+### Standard Deviance of the portfolio daily return rates
+
+```{r}
+sd(df_portfolio_returns$Daily_portfolio_returns)
+```
+
