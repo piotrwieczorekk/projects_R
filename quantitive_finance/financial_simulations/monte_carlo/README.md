@@ -1,1 +1,1 @@
-agdfhdfga
+--- IMPORTANT --- the whole executed code can be seen via html: https://piotrwieczorekk.github.io/projects_R/quantitive_finance/financial_simulations/monte_carlo/11bit.html alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
