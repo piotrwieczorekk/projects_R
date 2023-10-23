@@ -1,0 +1,190 @@
+---
+title: "Untitled"
+author: "Piotr Wieczorek"
+date: "2023-10-14"
+output: 
+  html_document: 
+    toc: yes
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(naniar)
+library(xgboost)
+library(glue)
+```
+
+
+## Reading and cleaning the data
+
+```{r}
+wine_features <- read.csv('wine_features.csv')
+wine_targets <- read.csv('wine_targets.csv')
+
+df <- inner_join(wine_features,wine_targets,by="X")
+```
+
+```{r}
+df <- df %>%
+  select(-c(1))
+```
+
+```{r}
+head(df)
+```
+### Checking the target variable's frequency
+
+```{r}
+table(df$quality)
+```
+### Aggregating the least frequent categories of the target variable
+
+```{r}
+df <- df %>%
+  mutate(quality = as.factor(quality)) %>%
+  mutate(quality = fct_collapse(quality,
+                                "Other" = c(3,4,8,9)))
+```
+
+
+```{r}
+table(df$quality)
+```
+
+## Modelling
+
+### Data partition
+
+```{r}
+data_partition <- caret::createDataPartition(y=df$quality,times=1,p=0.75,list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(glue("train_set ncol: {ncol(train_set)}"))
+print(glue("train_set nrow: {nrow(train_set)}"))
+print(glue("test_set ncol: {ncol(test_set)}"))
+print(glue("test_set nrow: {nrow(test_set)}"))
+```
+```{r}
+3657/(3676+1216)
+```
+
+```{r}
+table(train_set$quality)
+```
+### Upsampling the train data
+
+```{r}
+train_set_upsampled <- caret::upSample(x = train_set[,-12], y = train_set$quality)
+```
+
+```{r}
+head(train_set_upsampled)
+```
+```{r}
+table(train_set_upsampled$Class)
+```
+### Explanation of how the algorithm works
+
+XGBoost for multiclass classification problems works as follows:
+
+1. We start with initial logits for each class in each row in the training set.
+2. We calculate negative gradients or pseudo residuals based on the logits from step 1. We would most likely use cross-entropy for the loss function and softmax for the prediction function. 
+3. We would fit a decision tree based on the negative gradients. The tree would learn relationships between the features and the negative gradients. The tree would output its predictions of the negative gradients from the previous step for each class. We would obtain as many predicted negative gradients as there are classes to predict. 
+4. For each row in the training data set, we would get these predicted by the decision tree negative gradients for respective classes and multiply them by the learning rate and then add the result to the previous logits, in this case from step 1.
+5. After having the logits updated, we would calculate the new negative gradients, fit another tree, obtain another predicted negative gradients, scale them by the learning rate and add the the previous logits. We would repeat the process until convergence or the limit of iterations.
+
+
+### Specifying hyperparameters
+
+```{r}
+# Doing XGBoost for classification purposes.
+grid_tune <- expand.grid(
+  nrounds = c(1000,1500), #number of trees
+  max_depth = c(8,10),
+  eta = 0.1, #c(0.025,0.05,0.1,0.3), #Learning rate
+  gamma = 0.05, # pruning --> Should be tuned. i.e c(0, 0.05, 0.1, 0.5, 0.7, 0.9, 1.0)
+  colsample_bytree = 0.5, # c(0.4, 0.6, 0.8, 1.0) subsample ratio of columns for tree
+  min_child_weight = 1, # c(1,2,3) # the larger, the more conservative the model
+  #is; can be used as a stop
+  subsample = c(0.75,1) # c(0.5, 0.75, 1.0) # used to prevent overfitting by sampling X% training
+)
+```
+
+```{r}
+set.seed(123)
+train_control <- trainControl(method = "cv",
+                              number=3,
+                              verboseIter = TRUE,
+                              allowParallel = TRUE)
+xgb_tune <- train(x = train_set_upsampled[,-12],
+                  y = train_set_upsampled[,12],
+                  trControl = train_control,
+                  tuneGrid = grid_tune,
+                  method= "xgbTree",
+                  verbose = TRUE)
+```
+
+### Selecting model with the best hyperparameters
+
+```{r}
+xgb_tune$bestTune
+```
+
+### Using the model with the best hyperparameters
+
+```{r}
+set.seed(123)
+train_control <- trainControl(method = "cv",
+                              number=3,
+                              verboseIter = TRUE,
+                              allowParallel = TRUE)
+final_grid <- expand.grid(nrounds = xgb_tune$bestTune$nrounds,
+                           eta = xgb_tune$bestTune$eta,
+                           max_depth = xgb_tune$bestTune$max_depth,
+                           gamma = xgb_tune$bestTune$gamma,
+                           colsample_bytree = xgb_tune$bestTune$colsample_bytree,
+                           min_child_weight = xgb_tune$bestTune$min_child_weight,
+                           subsample = xgb_tune$bestTune$subsample)
+xgb_model <- train(x = train_set_upsampled[,-12],
+                   y = train_set_upsampled[,12],
+                   trControl = train_control,
+                   tuneGrid = final_grid,
+                   method = "xgbTree",
+                   verbose = TRUE)
+```
+
+```{r}
+head(predict(xgb_model, test_set))
+```
+
+```{r}
+xgb.pred <- predict(xgb_model, test_set)
+```
+
+### Confusion matrix
+
+```{r}
+# Confusion Matrix
+confusionMatrix(as.factor(xgb.pred),
+                as.factor(test_set$quality))
+```
+
+1. Accuracy Score: Proportion of correctly classified observations
+2. No Information Rate: If we were to guess the most frequent class, what accuracy would we get?
+3. Kappa: a metric that considers both the true positive rate and the false positive rate, providing a more balanced assessment of the model’s performance. Kappa ranges from -1 to 1, with 0 indicating no better than random chance, and 1 indicating perfect agreement between predictions and true values. (https://changjunlee.com/blogs/posts/4_confusion_mat_and_roc)
+4. Sensitivity: Proportion of correctly classified positive observations
+5. Specificity: Proportion of correctly classified negative observations
+6. Pos Pred Value (precision): Out of all of the observations that the model classified as positive, how many of them were actually positive?
+7. Neg Pred Value: Out of all of the observations that the model classified as negative, how many of them were actually negative?
+8. Prevalence: Proportion of actually positive observations in the data set
+
