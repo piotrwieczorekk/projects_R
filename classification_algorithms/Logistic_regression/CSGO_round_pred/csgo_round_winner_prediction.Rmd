@@ -58,7 +58,8 @@ head(df)
 
 ```{r}
 df %>%
-  select_if(is.character) 
+  select_if(is.character) %>%
+  head()
 ```
 
 ### Changing map and round_winner to factor, recoding bomb_planted to 0 and 1 
@@ -204,6 +205,26 @@ df_ct_weapons <- df %>%
 df_ct_weapons
 ```
 
+### CT pistol weapons frequency
+
+```{r,fig.width=10,fig.height=6}
+df_ct_weapons %>%
+  filter(name %in% c("ct_weapon_usps","ct_weapon_deagle","ct_weapon_p250",
+           "ct_weapon_p2000","ct_weapon_c75auto","ct_weapon_fiveseven")) %>%
+  mutate(name = str_remove_all(string=name,pattern="ct_weapon_")) %>%
+  mutate(name = str_to_upper(name)) %>%
+  mutate(name = fct_reorder(name,value)) %>%
+  ggplot(aes(x=name,y=value)) +
+  geom_bar(stat="identity") + 
+  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
+  labs(title = "CT Pistol Weapons Frequency") +
+  ylab('Pistol') + 
+  xlab('Pistol frequency')+
+  theme_ft_rc()
+```
+
+
+
 ### CT SMG weapons frequency
 
 ```{r,fig.width=10,fig.height=6}
@@ -220,26 +241,6 @@ df_ct_weapons %>%
   labs(title = "CT SMG Weapons Frequency (only > 100)") +
   ylab('SMG') + 
   xlab('SMG frequency')+
-  theme_ft_rc()
-```
-
-
-
-### CT pistol weapons frequency
-
-```{r,fig.width=10,fig.height=6}
-df_ct_weapons %>%
-  filter(name %in% c("ct_weapon_usps","ct_weapon_deagle","ct_weapon_p250",
-           "ct_weapon_p2000","ct_weapon_c75auto","ct_weapon_fiveseven")) %>%
-  mutate(name = str_remove_all(string=name,pattern="ct_weapon_")) %>%
-  mutate(name = str_to_upper(name)) %>%
-  mutate(name = fct_reorder(name,value)) %>%
-  ggplot(aes(x=name,y=value)) +
-  geom_bar(stat="identity") + 
-  geom_text(aes(label = value), vjust = -0.5, size = 3.5) +
-  labs(title = "CT Pistol Weapons Frequency") +
-  ylab('Pistol') + 
-  xlab('Pistol frequency')+
   theme_ft_rc()
 ```
 
