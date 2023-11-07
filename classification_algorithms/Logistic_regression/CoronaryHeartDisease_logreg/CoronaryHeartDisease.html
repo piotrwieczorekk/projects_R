@@ -386,6 +386,7 @@ display: none;
 likely to develop a coronary heart disease in 10 years time)</h2>
 <div id="libraries" class="section level3">
 <h3>Libraries</h3>
+<pre class="r"><code>rm(list=ls())</code></pre>
 <pre class="r"><code>library(caret)
 library(tidyverse)
 library(readr)</code></pre>
@@ -396,18 +397,17 @@ library(readr)</code></pre>
 <pre class="r"><code>df &lt;- read_csv(&quot;framingham_heart_disease.csv&quot;)</code></pre>
 <pre class="r"><code>head(df)</code></pre>
 <pre><code>## # A tibble: 6 × 16
-##    male   age education current…¹ cigsP…² BPMeds preva…³ preva…⁴ diabe…⁵ totChol
-##   &lt;dbl&gt; &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;
-## 1     1    39         4         0       0      0       0       0       0     195
-## 2     0    46         2         0       0      0       0       0       0     250
-## 3     1    48         1         1      20      0       0       0       0     245
-## 4     0    61         3         1      30      0       0       1       0     225
-## 5     0    46         3         1      23      0       0       0       0     285
-## 6     0    43         2         0       0      0       0       1       0     228
-## # … with 6 more variables: sysBP &lt;dbl&gt;, diaBP &lt;dbl&gt;, BMI &lt;dbl&gt;,
-## #   heartRate &lt;dbl&gt;, glucose &lt;dbl&gt;, TenYearCHD &lt;dbl&gt;, and abbreviated variable
-## #   names ¹​currentSmoker, ²​cigsPerDay, ³​prevalentStroke, ⁴​prevalentHyp,
-## #   ⁵​diabetes</code></pre>
+##    male   age education currentSmoker cigsPerDay BPMeds prevalentStroke
+##   &lt;dbl&gt; &lt;dbl&gt;     &lt;dbl&gt;         &lt;dbl&gt;      &lt;dbl&gt;  &lt;dbl&gt;           &lt;dbl&gt;
+## 1     1    39         4             0          0      0               0
+## 2     0    46         2             0          0      0               0
+## 3     1    48         1             1         20      0               0
+## 4     0    61         3             1         30      0               0
+## 5     0    46         3             1         23      0               0
+## 6     0    43         2             0          0      0               0
+## # ℹ 9 more variables: prevalentHyp &lt;dbl&gt;, diabetes &lt;dbl&gt;, totChol &lt;dbl&gt;,
+## #   sysBP &lt;dbl&gt;, diaBP &lt;dbl&gt;, BMI &lt;dbl&gt;, heartRate &lt;dbl&gt;, glucose &lt;dbl&gt;,
+## #   TenYearCHD &lt;dbl&gt;</code></pre>
 <pre class="r"><code>df &lt;- df %&gt;%
   select(-c(&quot;education&quot;))</code></pre>
 <pre class="r"><code>sapply(df, function(x) sum(is.na(x)))</code></pre>
@@ -421,17 +421,16 @@ library(readr)</code></pre>
   drop_na()</code></pre>
 <pre class="r"><code>head(df)</code></pre>
 <pre><code>## # A tibble: 6 × 15
-##    male   age curre…¹ cigsP…² BPMeds preva…³ preva…⁴ diabe…⁵ totChol sysBP diaBP
-##   &lt;dbl&gt; &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;
-## 1     1    39       0       0      0       0       0       0     195  106     70
-## 2     0    46       0       0      0       0       0       0     250  121     81
-## 3     1    48       1      20      0       0       0       0     245  128.    80
-## 4     0    61       1      30      0       0       1       0     225  150     95
-## 5     0    46       1      23      0       0       0       0     285  130     84
-## 6     0    43       0       0      0       0       1       0     228  180    110
-## # … with 4 more variables: BMI &lt;dbl&gt;, heartRate &lt;dbl&gt;, glucose &lt;dbl&gt;,
-## #   TenYearCHD &lt;dbl&gt;, and abbreviated variable names ¹​currentSmoker,
-## #   ²​cigsPerDay, ³​prevalentStroke, ⁴​prevalentHyp, ⁵​diabetes</code></pre>
+##    male   age currentSmoker cigsPerDay BPMeds prevalentStroke prevalentHyp
+##   &lt;dbl&gt; &lt;dbl&gt;         &lt;dbl&gt;      &lt;dbl&gt;  &lt;dbl&gt;           &lt;dbl&gt;        &lt;dbl&gt;
+## 1     1    39             0          0      0               0            0
+## 2     0    46             0          0      0               0            0
+## 3     1    48             1         20      0               0            0
+## 4     0    61             1         30      0               0            1
+## 5     0    46             1         23      0               0            0
+## 6     0    43             0          0      0               0            1
+## # ℹ 8 more variables: diabetes &lt;dbl&gt;, totChol &lt;dbl&gt;, sysBP &lt;dbl&gt;, diaBP &lt;dbl&gt;,
+## #   BMI &lt;dbl&gt;, heartRate &lt;dbl&gt;, glucose &lt;dbl&gt;, TenYearCHD &lt;dbl&gt;</code></pre>
 <pre class="r"><code>df$TenYearCHD &lt;- ifelse(df$TenYearCHD == 0, &quot;No&quot;, &quot;Yes&quot;)</code></pre>
 <pre class="r"><code>df &lt;- df %&gt;%
   mutate(TenYearCHD = as.factor(TenYearCHD))</code></pre>
@@ -442,17 +441,16 @@ library(readr)</code></pre>
   select(-c(&quot;male&quot;))</code></pre>
 <pre class="r"><code>head(df)</code></pre>
 <pre><code>## # A tibble: 6 × 15
-##     age curre…¹ cigsP…² BPMeds preva…³ preva…⁴ diabe…⁵ totChol sysBP diaBP   BMI
-##   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;
-## 1    39       0       0      0       0       0       0     195  106     70  27.0
-## 2    46       0       0      0       0       0       0     250  121     81  28.7
-## 3    48       1      20      0       0       0       0     245  128.    80  25.3
-## 4    61       1      30      0       0       1       0     225  150     95  28.6
-## 5    46       1      23      0       0       0       0     285  130     84  23.1
-## 6    43       0       0      0       0       1       0     228  180    110  30.3
-## # … with 4 more variables: heartRate &lt;dbl&gt;, glucose &lt;dbl&gt;, TenYearCHD &lt;fct&gt;,
-## #   gender &lt;fct&gt;, and abbreviated variable names ¹​currentSmoker, ²​cigsPerDay,
-## #   ³​prevalentStroke, ⁴​prevalentHyp, ⁵​diabetes</code></pre>
+##     age currentSmoker cigsPerDay BPMeds prevalentStroke prevalentHyp diabetes
+##   &lt;dbl&gt;         &lt;dbl&gt;      &lt;dbl&gt;  &lt;dbl&gt;           &lt;dbl&gt;        &lt;dbl&gt;    &lt;dbl&gt;
+## 1    39             0          0      0               0            0        0
+## 2    46             0          0      0               0            0        0
+## 3    48             1         20      0               0            0        0
+## 4    61             1         30      0               0            1        0
+## 5    46             1         23      0               0            0        0
+## 6    43             0          0      0               0            1        0
+## # ℹ 8 more variables: totChol &lt;dbl&gt;, sysBP &lt;dbl&gt;, diaBP &lt;dbl&gt;, BMI &lt;dbl&gt;,
+## #   heartRate &lt;dbl&gt;, glucose &lt;dbl&gt;, TenYearCHD &lt;fct&gt;, gender &lt;fct&gt;</code></pre>
 <pre class="r"><code>df &lt;- df %&gt;%
   mutate_at(c(&quot;currentSmoker&quot;,&quot;BPMeds&quot;,&quot;prevalentStroke&quot;,&quot;prevalentHyp&quot;,&quot;diabetes&quot;),as.factor)</code></pre>
 <div id="looking-for-potential-near-zero-variance-variables" class="section level3">
@@ -531,10 +529,6 @@ non-significant variables.</h3>
 ##     BMI - heartRate - currentSmoker - diabetes - prevalentHyp - 
 ##     glucose, family = &quot;binomial&quot;, data = df_train)
 ## 
-## Deviance Residuals: 
-##     Min       1Q   Median       3Q      Max  
-## -1.4680  -0.6071  -0.4338  -0.2914   2.8507  
-## 
 ## Coefficients:
 ##              Estimate Std. Error z value Pr(&gt;|z|)    
 ## (Intercept) -8.612620   0.540984 -15.920  &lt; 2e-16 ***
@@ -561,7 +555,7 @@ non-significant variables.</h3>
 purposeless as it predicts only ~5% of the “Yes” class of the TenYearCHD
 variable. The variable itself is unbalanced and that’s presumably the
 reason why the model fails on predicting the “Yes” class.</h3>
-<pre class="r"><code>confusionMatrix(as.factor(first_mod_prediction_group),reference = df_test$TenYearCHD)</code></pre>
+<pre class="r"><code>confusionMatrix(as.factor(first_mod_prediction_group),reference = df_test$TenYearCHD,positive = &quot;Yes&quot;)</code></pre>
 <pre><code>## Confusion Matrix and Statistics
 ## 
 ##           Reference
@@ -578,16 +572,16 @@ reason why the model fails on predicting the “Yes” class.</h3>
 ##                                         
 ##  Mcnemar&#39;s Test P-Value : &lt;2e-16        
 ##                                         
-##             Sensitivity : 0.99265       
-##             Specificity : 0.05263       
-##          Pos Pred Value : 0.85379       
-##          Neg Pred Value : 0.56250       
-##              Prevalence : 0.84786       
-##          Detection Rate : 0.84164       
-##    Detection Prevalence : 0.98577       
-##       Balanced Accuracy : 0.52264       
+##             Sensitivity : 0.052632      
+##             Specificity : 0.992655      
+##          Pos Pred Value : 0.562500      
+##          Neg Pred Value : 0.853791      
+##              Prevalence : 0.152135      
+##          Detection Rate : 0.008007      
+##    Detection Prevalence : 0.014235      
+##       Balanced Accuracy : 0.522643      
 ##                                         
-##        &#39;Positive&#39; Class : No            
+##        &#39;Positive&#39; Class : Yes           
 ## </code></pre>
 </div>
 <div id="solving-the-problem-upsampling-approach" class="section level3">
@@ -617,10 +611,6 @@ table(train_upsampling$Class)</code></pre>
 ## Call:
 ## glm(formula = Class ~ . - BPMeds - prevalentStroke - diabetes - 
 ##     heartRate - currentSmoker, family = &quot;binomial&quot;, data = train_upsampling)
-## 
-## Deviance Residuals: 
-##     Min       1Q   Median       3Q      Max  
-## -2.1189  -1.0044  -0.1066   0.9942   2.1998  
 ## 
 ## Coefficients:
 ##                 Estimate Std. Error z value Pr(&gt;|z|)    
@@ -653,7 +643,7 @@ second_mod_prediction_group &lt;- as.factor(second_mod_prediction_group)</code><
 it’s definitely more useful than the first one, because this time the
 model is much better at predicting “Yes” classes (at the cost of lower
 sensitivity).</h3>
-<pre class="r"><code>confusionMatrix(second_mod_prediction_group, df_test$TenYearCHD)</code></pre>
+<pre class="r"><code>confusionMatrix(second_mod_prediction_group, df_test$TenYearCHD,positive = &quot;Yes&quot;)</code></pre>
 <pre><code>## Confusion Matrix and Statistics
 ## 
 ##           Reference
@@ -670,16 +660,16 @@ sensitivity).</h3>
 ##                                          
 ##  Mcnemar&#39;s Test P-Value : &lt;2e-16         
 ##                                          
-##             Sensitivity : 0.6884         
-##             Specificity : 0.6667         
-##          Pos Pred Value : 0.9201         
-##          Neg Pred Value : 0.2774         
-##              Prevalence : 0.8479         
-##          Detection Rate : 0.5836         
-##    Detection Prevalence : 0.6343         
+##             Sensitivity : 0.6667         
+##             Specificity : 0.6884         
+##          Pos Pred Value : 0.2774         
+##          Neg Pred Value : 0.9201         
+##              Prevalence : 0.1521         
+##          Detection Rate : 0.1014         
+##    Detection Prevalence : 0.3657         
 ##       Balanced Accuracy : 0.6775         
 ##                                          
-##        &#39;Positive&#39; Class : No             
+##        &#39;Positive&#39; Class : Yes            
 ## </code></pre>
 </div>
 </div>

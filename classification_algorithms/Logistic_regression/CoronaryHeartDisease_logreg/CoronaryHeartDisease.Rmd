@@ -15,11 +15,17 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
 
 ### Libraries
 
+
+```{r}
+rm(list=ls())
+```
+
 ```{r}
 library(caret)
 library(tidyverse)
 library(readr)
 ```
+
 
 
 
@@ -129,7 +135,7 @@ first_mod_prediction_group <- ifelse(first_mod_prediction >= 0.5, "Yes","No")
 ### Although Accuracy is higher than No Information Rate, this model is purposeless as it predicts only ~5% of the "Yes" class of the TenYearCHD variable. The variable itself is unbalanced and that's presumably the reason why the model fails on predicting the "Yes" class. 
 
 ```{r}
-confusionMatrix(as.factor(first_mod_prediction_group),reference = df_test$TenYearCHD)
+confusionMatrix(as.factor(first_mod_prediction_group),reference = df_test$TenYearCHD,positive = "Yes")
 ```
 
 ### Solving the problem: Upsampling approach
@@ -166,7 +172,7 @@ second_mod_prediction_group <- as.factor(second_mod_prediction_group)
 ### This model has lower accuracy score than No Information Rate, but it's definitely more useful than the first one, because this time the model is much better at predicting "Yes" classes (at the cost of lower sensitivity).
 
 ```{r}
-confusionMatrix(second_mod_prediction_group, df_test$TenYearCHD)
+confusionMatrix(second_mod_prediction_group, df_test$TenYearCHD,positive = "Yes")
 ```
 
 
