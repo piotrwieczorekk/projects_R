@@ -143,6 +143,23 @@ summary(df_clean$Educational_level)
 
 
 ```{r}
+
+df_clean <- df_clean %>%
+  mutate(Educational_level = fct_collapse(Educational_level,
+                                          "Junior_cycle" = c("Junior_cycle_incomplete-secondary_school",
+                                                             "Junior_cycle_terminal_leaver-secondary_school",
+                                                             "Junior_cycle_terminal_leaver-vocational_school",
+                                                             "Junior_cycle_incomplete-vocational_school"),
+                                          "3rd_level" = c("3rd_level_complete","3rd_level_incomplete"),
+                                          "Senior_cycle" = c("Senior_cycle_incomplete-vocational_school",
+                                                             "Senior_cycle_terminal_leaver-secondary_school",
+                                                             "Senior_cycle_incomplete-secondary_school"
+                                                             )))
+
+```
+
+
+```{r}
 df_clean$Educational_level <- droplevels(df_clean$Educational_level)
 
 levels(df_clean$Educational_level)
@@ -296,7 +313,7 @@ paste("MAPE:",mean(abs(test_set$residual)/test_set$DVRT))
 ### Random Forest model
 ```{r}
 set.seed(123)
-rf_reg <- randomForest(DVRT ~. -Type_school -Leaving_Certificate,data=train_set,ntree=28,mtry=1,importance=TRUE)
+rf_reg <- randomForest(DVRT ~. -Type_school -Leaving_Certificate,data=train_set,ntree=250,mtry=2,importance=TRUE)
 ```
 
 ```{r}
@@ -311,8 +328,15 @@ plot(rf_reg)
 
 #### Variable Importance plot
 
+
 ```{r}
 varImpPlot(rf_reg,type=1)
+```
+
+
+
+```{r}
+varImpPlot(rf_reg,type=2)
 ```
 ```{r}
 length(predict(rf_reg,test_set))
@@ -326,7 +350,7 @@ paste("RF MSR:", mean((test_set$DVRT - predict(rf_reg,test_set))^2))
 
 ## Conclusion
 
-Linear model is slightly better than the random forest model because it explains slightly more variance and its Mean of squared residuals metric is lower
+Random Forest model is slightly better than the random forest model because its Mean of squared residuals metric is lower (150.53 for RF and 166 for linear model - both applied to the test set)
 
 
 
