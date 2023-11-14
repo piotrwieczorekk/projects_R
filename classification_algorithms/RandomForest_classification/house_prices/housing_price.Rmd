@@ -1,0 +1,385 @@
+---
+title: "Predicting House Prices - Random Forest and Data Transformation"
+author: "Piotr Wieczorek"
+date: "2023-11-14"
+output: 
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(janitor)
+library(naniar)
+library(fastDummies)
+library(randomForest)
+library(gridExtra)
+library(moments)
+```
+
+## Reading and cleaning the data
+
+```{r}
+df <- read.csv("C:/Users/piotr/Desktop/pythonfiles/Real estate.csv")
+```
+
+```{r}
+head(df)
+```
+### Unselecting unecessary columns
+
+```{r}
+df <- df %>%
+  select(-c(1)) 
+```
+
+### Cleaning colnames
+
+```{r}
+df <- janitor::clean_names(df)
+```
+
+```{r}
+head(df)
+```
+
+### Mutating transaction_date
+
+```{r}
+df <- df %>%
+  mutate(x1_transaction_date = floor(x1_transaction_date))
+```
+
+### Data summary
+```{r}
+summary(df)
+```
+
+### Changing transaction_date data type
+
+```{r}
+df <- df %>%
+  mutate(x1_transaction_date = as.factor(x1_transaction_date))
+```
+
+## Modeling
+
+### Data partition
+
+```{r}
+set.seed(123)
+
+data_partition <- caret::createDataPartition(df$y_house_price_of_unit_area, p=0.7, list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(dim(train_set))
+print(dim(test_set))
+```
+
+### Creating dummy variables
+
+```{r}
+train_dums <- fastDummies::dummy_cols(train_set[,-7],remove_selected_columns = TRUE, remove_first_dummy = TRUE)
+train_set <- cbind(train_dums, train_set[,7])
+
+test_dums <- dummy_cols(test_set[,-7], remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+test_set <- cbind(test_dums, test_set[,7])
+```
+
+```{r}
+colnames(train_set)[7] <- 'house_price'
+colnames(test_set)[7] <- 'house_price'
+```
+
+
+```{r}
+head(train_set)
+```
+
+```{r}
+head(test_set)
+```
+
+
+### First random forest model (without transforming the dependent variable)
+
+
+```{r}
+set.seed(123)
+rf_mod1 <- randomForest(house_price ~., data=train_set, ntree = 100, mtry=2,importance=TRUE)
+
+rf_mod1
+```
+
+#### Relationship between number of trees and Error
+
+
+```{r}
+plot(rf_mod1)
+```
+
+
+#### Variable importance plot based on %IncMSE
+
+```{r}
+varImpPlot(rf_mod1,type=1)
+```
+
+
+#### Prediction
+
+
+
+```{r}
+head(predict(rf_mod1, test_set))
+```
+
+#### Residuals
+
+
+```{r}
+rf_mod1_test_residuals <- test_set$house_price - predict(rf_mod1,test_set)
+```
+
+```{r}
+head(rf_mod1_test_residuals)
+```
+
+#### Metrics (MAE,MSE,MAPE,R^2)
+
+```{r}
+paste("MAE:",round(mean(abs(rf_mod1_test_residuals)),2))
+paste("MSE:", mean(rf_mod1_test_residuals^2))
+paste("MAPE:", round(mean(abs(rf_mod1_test_residuals)/test_set$house_price),2))
+paste("R^2:",caret::R2(predict(rf_mod1, test_set),test_set$house_price))
+```
+
+
+```{r}
+metrics_without_transformation <- data.frame()
+
+mae_without_transformation <- round(mean(abs(rf_mod1_test_residuals)),2)
+mse_without_transformation <- mean(rf_mod1_test_residuals^2)
+mape_without_transformation <- round(mean(abs(rf_mod1_test_residuals)/test_set$house_price),2)
+r_squared_without_transformation <- round(caret::R2(predict(rf_mod1, test_set),test_set$house_price),2)
+
+output <- c(mae_without_transformation,
+            mse_without_transformation,
+            mape_without_transformation,
+            r_squared_without_transformation)
+
+metrics_without_transformation <- rbind(metrics_without_transformation,output)
+```
+
+```{r}
+colnames(metrics_without_transformation) <- c("mae_without_transformation",
+                                              "mse_without_transformation",
+                                              "mape_without_transformation",
+                                              "r^2_without_transformation")
+```
+
+```{r}
+metrics_without_transformation <- metrics_without_transformation %>%
+  pivot_longer(cols=everything(),names_to="Statistic",values_to="Value") %>%
+  mutate(Statistic = str_remove_all(Statistic, "_.*")) %>%
+  rename("Value_without_transformation" = Value)
+
+metrics_without_transformation
+```
+
+
+### Transforming the dependent variable to improve the model's metrics
+
+#### Applying different transformations (square root, natural logarithm, Box-Cox transformation)
+```{r,fig.width=12,fig.height=4}
+
+grid.arrange(
+  train_set %>%
+  ggplot(aes(x=house_price)) +
+  geom_histogram(bins=30,fill='orange',colour='black'),
+  
+  train_set %>%
+  ggplot(aes(x=(house_price**0.5))) +
+  geom_histogram(bins=30,fill='orange',colour='black'),
+  
+  train_set %>%
+  ggplot(aes(x=log(house_price))) +
+  geom_histogram(bins=30,fill='orange',colour='black'),
+  
+  ncol=3,nrow=1
+  
+)
+
+```
+
+```{r}
+bc_trans <- caret::BoxCoxTrans(train_set$house_price)
+box_cox_transformed_house_price <- predict(bc_trans,train_set$house_price)
+```
+
+```{r}
+paste('Box-Cox lambda:',bc_trans$lambda)
+```
+
+
+```{r}
+head(train_set$house_price)
+```
+```{r}
+head(box_cox_transformed_house_price)
+```
+
+```{r}
+hist(x=box_cox_transformed_house_price)
+```
+
+#### Shapiro-Wilk normality test p-value for various transformations
+
+
+```{r}
+shapiro <- shapiro.test(train_set$house_price)
+shapiro_log <- shapiro.test(log(train_set$house_price))
+shapiro_sqrt <- shapiro.test(train_set$house_price**0.5)
+shapiro_box_cox <- shapiro.test(box_cox_transformed_house_price)
+```
+
+```{r}
+paste('no transformation, shapiro p-val:',shapiro$p.value)
+paste('log transformation, shapiro p-val:',shapiro_log$p.value)
+paste('square root transformation, shapiro p-val:',shapiro_sqrt$p.value)
+paste('Box-Cox transformation, shapiro p-val:', shapiro_box_cox$p.value )
+```
+
+#### Dependent variable's skewness for various transformations
+
+```{r}
+paste('no transformation, skewness:',skewness(train_set$house_price))
+paste('log transformation, skewness:',skewness(log(train_set$house_price)))
+paste('square root transformation, skewness:',skewness(train_set$house_price**0.5))
+paste('Box-Cox transformation, skewness:', skewness(box_cox_transformed_house_price))
+```
+
+#### Applying square root transformation to the dependent variable
+
+##### This type of transformation was chosen because taking the square root of the dependent variable led to the highest p-value from the shapiro test and it also led to the lowest skewnes
+
+```{r}
+train_set$house_price_sqrt <- train_set$house_price**0.5
+```
+
+```{r}
+test_set$house_price_sqrt <- test_set$house_price**0.5
+```
+
+
+
+### Second random forest model (with transformed dependent variable)
+
+
+```{r}
+set.seed(987)
+rf_mod2<- randomForest(house_price_sqrt ~. -house_price,data=train_set, mtry = 3, ntree = 100)
+rf_mod2
+```
+
+
+#### Prediction
+
+
+```{r}
+rf_mod2_prediction <- predict(rf_mod2, test_set)
+```
+
+```{r}
+rf_mod2_prediction <- rf_mod2_prediction**2
+```
+
+```{r}
+head(rf_mod2_prediction)
+```
+
+
+#### Residuals
+
+
+```{r}
+rf_mod2_test_residuals <- test_set$house_price - rf_mod2_prediction
+```
+
+```{r}
+head(rf_mod2_test_residuals)
+```
+
+#### Model's metrics
+
+
+```{r}
+paste('MAE with sqrt:',mean(abs(rf_mod2_test_residuals)))
+paste("MSE with sqrt:", mean(rf_mod2_test_residuals^2))
+paste('MAPE with sqrt:',mean(abs(rf_mod2_test_residuals)/test_set$house_price))
+paste("R^2:",caret::R2(rf_mod2_prediction,test_set$house_price_sqrt))
+```
+```{r}
+mae_sqrt_trans <- round(mean(abs(rf_mod2_test_residuals)),4)
+mse_sqrt_trans <- round(mean(rf_mod2_test_residuals^2),4)
+mape_sqrt_trans <- round(mean(abs(rf_mod2_test_residuals)/test_set$house_price),5)
+r2_sqrt_trans <- round(caret::R2(rf_mod2_prediction,test_set$house_price),5)
+```
+
+```{r}
+metrics_sqrt_trans <- data.frame()
+
+output <- c(mae_sqrt_trans,
+            mse_sqrt_trans,
+            mape_sqrt_trans,
+            r2_sqrt_trans)
+
+metrics_sqrt_trans <- rbind(metrics_sqrt_trans,output)
+
+colnames(metrics_sqrt_trans) <- c("mae_sqrt_trans",
+                                              "mse_sqrt_trans",
+                                              "mape_sqrt_trans",
+                                              "r^2_sqrt_trans")
+
+metrics_sqrt_trans <- metrics_sqrt_trans %>%
+  pivot_longer(cols=everything(),names_to="Statistic",values_to="Value") %>%
+  mutate(Statistic = str_remove_all(Statistic, "_.*")) %>%
+  rename("Value_sqrt_trans" = Value)
+
+```
+
+
+### Comparing MAE,MSE,MAPE and R^2 metrics for both models
+
+
+```{r}
+metrics <- cbind(metrics_without_transformation,metrics_sqrt_trans) %>%
+  select(-c(3))
+```
+
+```{r}
+metrics
+```
+
+### Conclusion
+
+##### Applying sqrt transformation (and later reversing the predictions by taking them to the power of 2) resulted in:
+1. lower MAE
+2. lower MSE
+3. lower MAPE
+4. higher R^2
+
+
+
+
