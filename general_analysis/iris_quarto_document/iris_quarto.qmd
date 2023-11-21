@@ -1,0 +1,90 @@
+---
+title: "Quarto Document on the example of the Iris data set"
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+editor: visual
+theme:
+  light: lux
+---
+
+
+## Libraries
+
+```{r,warning=FALSE,message=FALSE}
+library(tidyverse)
+library(plotly)
+library(hrbrthemes)
+library(skimr)
+library(janitor)
+library(plotly)
+library(corrplot)
+```
+
+## Exploring the data
+
+```{r}
+df<- iris
+```
+
+### Data visualization
+
+::: {.panel-tabset .nav-pills}
+### Density plots
+
+```{r,warning=FALSE,fig.cap="Figure 1: Density plots"}
+p1 <- df %>%
+  gather(c(1:4),key="key",value="val") %>%
+  ggplot(aes(x=val, fill=Species)) + 
+  geom_density(alpha=0.5) +
+  facet_wrap(~key,scales="free")
+
+p1 <- ggplotly(p1)
+p1
+```
+
+### Boxplots
+
+```{r,warning=FALSE,fig.cap="Figure 2: Boxplots"}
+p2 <- df %>%
+  gather(c(1:4),key="key",value="val") %>%
+  ggplot(aes(x=Species,y=val,fill=Species)) +
+  geom_boxplot() + 
+  facet_wrap(~key,scales="free") 
+
+p2 <- ggplotly(p2)
+p2
+```
+
+:::
+
+```{r, fig.cap = "Table 1: Descriptive statistics by species"}
+df %>%
+  group_by(Species) %>%
+  select_if(is.numeric) %>%
+  skimr::skim()
+```
+
+```{r, fig.cap = "Figure 3: Correlation plot"}
+corrplot(cor(df %>% select_if(is.numeric)),addCoef.col = TRUE)
+```
+
+```{r, fig.cap = "Table 2: Correlation matrix"}
+cor(df %>% select_if(is.numeric))
+```
+
+## Linear model
+
+```{r}
+mod <- lm(formula = Petal.Width ~., data=df)
+print(summary(mod))
+```
+
+### Diagnostic plots
+
+```{r,fig.cap = "Figure 4: Model diagnostic plots"}
+par(mfrow=c(2,2))
+plot(mod)
+```
