@@ -1,3 +1,4 @@
---- IMPORTANT --- the whole executed code can be seen via html: 
-https://piotrwieczorekk.github.io/projects_R/general_analysis/iris_quarto_document/iris_quarto.html
-alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
+--- IMPORTANT ---
+in order to see the project, you have to download the .html file and open it.
+Usually I paste a direct link to the rendered code, but github is having issues with displaying dynamic content. 
+
