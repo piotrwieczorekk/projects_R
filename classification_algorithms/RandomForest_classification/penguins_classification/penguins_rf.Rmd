@@ -1,0 +1,284 @@
+---
+title: "Penguins Classification"
+author: "Piotr Wieczorek"
+date: "2023-11-26"
+output: 
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(caret)
+library(naniar)
+library(janitor)
+library(palmerpenguins)
+library(missForest)
+library(skimr)
+library(gridExtra)
+library(randomForest)
+library(fastDummies)
+```
+
+## Loading and cleaning the data set
+
+```{r}
+df <- palmerpenguins::penguins
+```
+
+```{r}
+head(df)
+```
+
+```{r}
+glimpse(df)
+```
+
+### NA values summary
+
+```{r}
+naniar::miss_var_summary(df)
+```
+
+```{r}
+naniar::gg_miss_var(df)
+```
+
+### Data imputation
+
+
+```{r}
+df <- missForest::missForest(as.data.frame(df))
+```
+
+#### Out of bag error rate
+
+```{r}
+df$OOBerror
+```
+
+```{r}
+df <- df$ximp
+```
+
+
+```{r}
+sum(is.na(df))
+```
+
+```{r}
+head(df)
+```
+
+### Rounding numerical data
+
+```{r}
+df <- df %>%
+  mutate_if(is.numeric,~round(.,2))
+```
+
+```{r}
+head(df)
+```
+
+
+### Mutating the data
+```{r}
+df <- df %>%
+  mutate(across(where(is.factor),as.character)) %>%
+  mutate(across(where(is.character),~str_to_sentence(.))) %>%
+  mutate(across(where(is.character),as.factor)) %>%
+  mutate(across(where(is.numeric),~round(.,1))) %>%
+  mutate(sex = fct_recode(sex, M = "Male", `F` = "Female")) %>%
+  mutate(year = as.factor(year))
+```
+
+
+## Exploratory analysis
+
+### Numerical data summary
+
+```{r}
+df %>%
+  select_if(is.numeric) %>%
+  skim()
+```
+
+
+#### Means of numerical data by island
+
+```{r}
+df_island <- df %>%
+  group_by(island) %>%
+  summarize(across(where(is.numeric),~mean(.),.names="{col}_mean")) %>%
+  mutate(across(where(is.numeric),~round(.,2)))
+```
+
+#### Means of numerical data by species
+
+```{r}
+df_island <- df %>%
+  group_by(species) %>%
+  summarize(across(where(is.numeric),~mean(.),.names="{col}_mean")) %>%
+  mutate(across(where(is.numeric),~round(.,2)))
+```
+
+### Factor variables summary
+
+```{r}
+df %>%
+  select_if(is.factor) %>%
+  summary()
+```
+
+
+### Data visualization
+
+#### Boxplots of numerical data by species
+
+```{r,fig.width=10,fig.height=6}
+th <- theme(axis.text.x = element_text(size=18),
+            axis.text.y = element_text(size=18),
+            axis.title.x = element_text(size=20),
+            axis.title.y = element_text(size=20),
+            title = element_text(size=22),
+            strip.text = element_text(size=24),
+            legend.text = element_text(size=18),
+            legend.title = element_text(size=22)
+            )
+
+df %>%
+  select(c("species","bill_length_mm","bill_depth_mm","flipper_length_mm","body_mass_g")) %>%
+  gather(c(2:5),value="val",key="key") %>%
+  ggplot(aes(x=species, y = val, fill = species)) + 
+  geom_boxplot(outlier.shape=NA) + 
+  geom_jitter(aes(color=species),alpha=0.35) + 
+  facet_wrap(~key, scales="free") +theme_light() + theme(strip.text = element_text(size=16))
+```
+
+#### Boxplots of numerical data by species, island and sex
+
+```{r,fig.width=20,fig.height=14}
+
+grid.arrange(
+  
+  df %>%
+  ggplot(aes(x=species,y=bill_length_mm,fill=sex)) +
+  geom_boxplot() + 
+    facet_wrap(~island, scales="free") +theme_light() + th,
+  
+  df %>%
+    ggplot(aes(x=species,y=bill_depth_mm,fill=sex)) +
+    geom_boxplot() + 
+    facet_wrap(~island, scales="free") + theme_light() + th,
+  
+  df %>%
+    ggplot(aes(x=species, y = flipper_length_mm,fill=sex)) + 
+    geom_boxplot() + 
+    facet_wrap(~island, scales="free")+ theme_light() + th,
+  
+  df %>%
+    ggplot(aes(x=species,y = body_mass_g, fill=sex)) + 
+    geom_boxplot() + 
+    facet_wrap(~island, scales="free") + theme_light() + th ,
+  
+  ncol = 2, nrow = 2
+  
+)
+```
+
+
+### Density plots by species and sex
+```{r,fig.width=12,fig.height=6}
+df %>%
+  select(c("species","bill_length_mm","bill_depth_mm","flipper_length_mm","body_mass_g","sex")) %>%
+  gather(-c("species","sex"),value="val",key="key") %>% 
+  ggplot(aes(x=val,fill=species))  +
+  geom_density(alpha=0.35) + 
+  facet_wrap(~key + sex,scales="free",nrow = 2,ncol=4) + theme_light() + theme(strip.text = element_text(size=16))
+```
+
+
+
+## Modeling
+
+### Data partition
+
+
+```{r}
+data_partition <- caret::createDataPartition(df$species, p = 0.7, list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(dim(train_set))
+print(dim(test_set))
+```
+
+### Creating dummy variables
+
+```{r}
+train_dummies <-fastDummies::dummy_cols(train_set[,2:8], remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+train_set <- cbind(train_dummies,train_set[,1])
+
+test_dummies <- fastDummies::dummy_cols(test_set[,2:8],remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+test_set <- cbind(test_dummies, test_set[,1])
+```
+
+
+```{r}
+colnames(train_set)[10] <- "species"
+colnames(test_set)[10] <- "species"
+```
+
+```{r}
+head(train_set)
+```
+
+```{r}
+head(test_set)
+```
+
+### Random forest model
+
+```{r}
+rf_mod <- randomForest(species ~. -year_2008 -year_2009,data = train_set, ntree=20, mtry = floor(sqrt(ncol(train_set))),importance = TRUE)
+rf_mod
+```
+
+#### Error plot
+
+
+```{r}
+plot(rf_mod)
+```
+
+#### Importance plot
+
+```{r}
+varImpPlot(rf_mod,type=1)
+```
+#### Prediction
+
+```{r}
+head(predict(rf_mod,test_set))
+```
+
+#### Confusion matrix based on the predictions
+
+```{r}
+confusionMatrix(predict(rf_mod,test_set),test_set$species)
+```
+
+
