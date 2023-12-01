@@ -1,1 +1,1 @@
-dfhgdfghdfgh
+--- IMPORTANT --- the whole executed code can be seen via html: https://piotrwieczorekk.github.io/projects_R/geographical_analysis/inflation_unemp/map_europe_poland_germany.html alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
