@@ -125,14 +125,25 @@ df_island <- df %>%
   mutate(across(where(is.numeric),~round(.,2)))
 ```
 
+```{r}
+df_island
+```
+
+
 #### Means of numerical data by species
 
 ```{r}
-df_island <- df %>%
+df_species<- df %>%
   group_by(species) %>%
   summarize(across(where(is.numeric),~mean(.),.names="{col}_mean")) %>%
   mutate(across(where(is.numeric),~round(.,2)))
 ```
+
+```{r}
+df_species
+```
+
+
 
 ### Factor variables summary
 
@@ -269,6 +280,8 @@ plot(rf_mod)
 ```{r}
 varImpPlot(rf_mod,type=1)
 ```
+
+
 #### Prediction
 
 ```{r}
