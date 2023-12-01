@@ -1,0 +1,230 @@
+---
+title: "Using sf and ggplot to create map plots in R"
+author: "Piotr Wieczorek"
+date: "2023-12-01"
+output: 
+  html_document: 
+    toc: yes
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r}
+rm(list=ls())
+```
+
+
+
+## Libraries
+
+
+```{r}
+library(tidyverse)
+library(scales)
+library(ggmap)
+library(mapproj)
+library(maps)
+library(mapproj)
+library(readxl)
+library(sf)
+library(RColorBrewer)
+```
+
+
+## Reading the goegraphical data about the entire world
+
+```{r}
+world_tbl <- map_data("world") %>%
+  as_tibble()
+```
+
+
+```{r}
+head(world_tbl)
+```
+
+
+## Reading and cleaning the data - inflation rate in Europe in October, 2023
+
+
+```{r}
+inflation_october_2023 <- read_excel("inflacja_pazdziernik_2023.xlsx", 
+    sheet = "Arkusz1")
+```
+
+
+```{r}
+colnames(inflation_october_2023) <- c("region","inflation_rate_10_2023")
+```
+
+
+```{r}
+inflation_october_2023 <- inflation_october_2023 %>%
+  mutate(region = case_when(region == "Kosovo*" ~ "Kosovo",
+                            region == "United Kingdom" ~ "UK",
+                            TRUE ~ region))
+```
+
+```{r}
+inflation_october_2023 <- world_tbl %>%
+  left_join(inflation_october_2023, by = "region")
+```
+
+
+```{r}
+inflation_october_2023 <- inflation_october_2023[complete.cases(inflation_october_2023[,
+                                      c("inflation_rate_10_2023")]),]
+```
+
+
+
+### Map plot picturing inflation rate in Europe
+
+```{r}
+inflation_october_2023 <- inflation_october_2023 %>%
+  filter(!(subregion == "Svalbard" & !(is.na(subregion))))
+```
+
+
+
+
+```{r,fig.width=12,fig.height=8}
+inflation_october_2023 %>%
+  ggplot(aes(x = long, 
+             y = lat,
+             group=group,
+             text = paste0(region,
+                          ": ",
+                          inflation_rate_10_2023,"%"))) + 
+  geom_polygon(aes(fill = inflation_rate_10_2023),color="black") +
+  geom_path(color = "white", size = 0.5) +
+  scale_fill_gradient(name = "inflation rate (%)", low = "green", high = "red", na.value = "gray50") + 
+  labs(title = "Inflation Rate in Europe (annual rate of change) in October 2023",
+       x = "",
+       y= "") + 
+  theme(rect  = element_blank(),
+        plot.title = element_text(size=18),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=14)) 
+
+
+```
+
+
+
+## Reading the data about polish voivodeships coordinates
+
+
+```{r}
+voivodships <- st_read("poland_woj.json")
+```
+
+```{r}
+voivodships$name
+```
+
+## Reading the data about unemployment rate in polish voivodeships
+
+```{r}
+unemp_10_2023 <- read_excel("stopa_bezrobocia_10_2023.xlsx", 
+    sheet = "Sheet1", col_names = FALSE)
+```
+
+### Cleaning and joining the data
+
+```{r}
+colnames(unemp_10_2023) <- c("name","unemp_rate")
+```
+
+```{r}
+unemp_10_2023 <- voivodships %>%
+  left_join(unemp_10_2023, by = "name")
+```
+
+```{r}
+class(unemp_10_2023)
+```
+
+```{r}
+unemp_10_2023
+```
+
+
+### Map plot picturing unemployment rate within polish territory administrative division
+
+```{r,fig.width=12,fig.height=8}
+ggplot(unemp_10_2023) +
+  geom_sf(aes(fill = unemp_rate)) +
+  scale_fill_gradient(name = "Unemployment Rate (%)", low = "#CDBABA", high = "#BC353A") +
+  labs(title = "Unemployment Rate (%) in Polish Voivodeships") +
+  theme_minimal() + 
+  theme(plot.title = element_text(size=18),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=14))
+```
+
+
+## Reading data about german bundeslands coordinates
+
+```{r}
+bundeslands <- st_read("germany-states.geojson")
+```
+
+```{r}
+bundeslands$NAME_1
+```
+
+
+## Reading data about median of brutto salary in Germany and joining the data
+
+
+```{r}
+einkommen_median <- read_excel("bruttogehalt_median.xlsx", 
+    sheet = "Sheet2", col_names = TRUE)
+```
+
+```{r}
+einkommen_median
+```
+
+```{r}
+einkommen_median <- bundeslands %>%
+  left_join(einkommen_median, by = "NAME_1")
+```
+
+```{r}
+einkommen_median[,c("NAME_1","BRUTTOMONATSEINKOMMEN_MEDIAN")]
+```
+
+
+
+### Map plot picturing median salary within german administrative territory division units
+
+
+```{r,fig.width=12,fig.height=8}
+ggplot(einkommen_median) +
+  geom_sf(aes(fill = BRUTTOMONATSEINKOMMEN_MEDIAN)) +
+  scale_fill_gradient(name ="mittleres Bruttomonatsgehalt (€)",high = "#DBD75F", low = "black") +
+  labs(title = "Das Medianbruttomonatsgehalt Deutschlandweit") +
+  theme_minimal() + 
+  theme(legend.position = "right") + 
+  theme(plot.title = element_text(size=18),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=14))
+```
+
+
+
+
+
+
+
+
+
+
+
+
