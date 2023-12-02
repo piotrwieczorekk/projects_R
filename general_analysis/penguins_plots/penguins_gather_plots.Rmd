@@ -1,0 +1,216 @@
+---
+title: "Using ggplot2 with gather() and grid.arrange() function on the example of the penguins data set"
+author: "Piotr Wieczorek"
+date: "2023-12-02"
+output: 
+  html_document: 
+    toc: yes
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(naniar)
+library(janitor)
+library(scales)
+library(gridExtra)
+library(missForest)
+library(ggpubr)
+```
+
+
+## Loading and cleaning the data
+
+
+```{r}
+df <- palmerpenguins::penguins
+```
+
+```{r}
+head(df)
+```
+
+### NA values
+
+
+```{r}
+naniar::miss_var_summary(df) %>%
+  filter(n_miss > 0)
+```
+```{r}
+naniar::gg_miss_var(df[,c("sex","bill_length_mm","bill_depth_mm",
+                          "flipper_length_mm","body_mass_g")])
+```
+
+
+### Data imputation
+
+```{r}
+df <- missForest::missForest(as.data.frame(df))
+df$OOBerror
+```
+
+```{r}
+df <- df$ximp
+```
+
+```{r}
+sum(is.na(df))
+```
+
+## Plots
+
+### Means of numerical variables for Adelie penguins living on the Dream island
+
+```{r}
+mean_table <- df %>%
+  filter(species=="Adelie" & island == "Dream") %>%
+  drop_na() %>%
+  group_by(sex,species,island) %>%
+  summarise(across(where(is.numeric),~mean(.),.names = "{col}_mean")) %>%
+  mutate(across(where(is.numeric),~round(.))) %>%
+  select(c(1:7)) %>%
+  pivot_longer(cols=c(4:7)) %>%
+  arrange(desc(value)) %>%
+  rename(variable = "name")
+
+mean_table
+```
+
+```{r}
+th <- theme(plot.title = element_text(size=16),
+        plot.subtitle =  element_text(size=16),
+        axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=16)
+        )
+```
+
+
+
+```{r,fig.width=12,fig.height=8}
+grid.arrange(
+  mean_table %>%
+  filter(variable == "body_mass_g_mean") %>%
+  ggplot(aes(x=variable,y=value,fill=sex)) + 
+  geom_bar(stat="identity", position="dodge",color = "black") + 
+  geom_text(aes(label = value),position=position_dodge(width=0.9),vjust=-0.2) + 
+  scale_fill_manual(values=c("#DC7E7E","#7EAEDC")) + 
+  labs(x="", y = "", title = "Body Mass Mean (g) by Sex",subtitle = "Adelie Species living on the Dream Island") + 
+  theme_minimal() + th,
+  
+  mean_table %>%
+  filter(variable == "flipper_length_mm_mean") %>%
+  ggplot(aes(x=variable,y=value,fill=sex)) + 
+  geom_bar(stat="identity", position="dodge",color = "black") + 
+  geom_text(aes(label = value),position=position_dodge(width=0.9),vjust=-0.2) + 
+  scale_fill_manual(values=c("#DC7E7E","#7EAEDC")) + 
+  labs(x="", y = "", title = "Flipper Length Mean (mm) by Sex",subtitle = "Adelie Species living on the Dream Island") + 
+  theme_minimal() + th,
+  
+  mean_table %>%
+  filter(variable == "bill_length_mm_mean") %>%
+  ggplot(aes(x=variable,y=value,fill=sex)) + 
+  geom_bar(stat="identity", position="dodge",color = "black") + 
+  geom_text(aes(label = value),position=position_dodge(width=0.9),vjust=-0.2) + 
+  scale_fill_manual(values=c("#DC7E7E","#7EAEDC")) + 
+  labs(x="", y = "", title = "Bill Length Mean (mm) by Sex",subtitle = "Adelie Species living on the Dream Island") + 
+  theme_minimal() + th,
+  
+  mean_table %>%
+  filter(variable == "bill_depth_mm_mean") %>%
+  ggplot(aes(x=variable,y=value,fill=sex)) + 
+  geom_bar(stat="identity", position="dodge",color = "black") + 
+  geom_text(aes(label = value),position=position_dodge(width=0.9),vjust=-0.2) + 
+  scale_fill_manual(values=c("#DC7E7E","#7EAEDC")) + 
+  labs(x="", y = "", title = "Bill Depth Mean (mm) by Sex",subtitle = "Adelie Species living on the Dream Island") + 
+  theme_minimal() + th,
+  
+  ncol=2,nrow=2
+)
+
+```
+
+
+### Boxplots of numerical variables for Adelie penguins living on the Dream island
+
+```{r,fig.width=12,fig.height=8}
+df %>%
+  filter(species == "Adelie" & island == "Dream") %>%
+  select(-c(year,island)) %>%
+  gather(c(2:5),key="key",value="val")  %>%
+  ggplot(aes(x=sex, y=val,fill=sex)) + 
+  geom_boxplot(outlier.shape = NA,alpha=0.5,size=1) + 
+  geom_jitter(alpha=1,size=3,shape = 21,color="black") + 
+  scale_fill_manual(values=c("#DC7E7E","#7EAEDC")) + 
+  facet_wrap(~key,scales="free") + 
+  labs(title="Boxplots of numeric variables",
+       subtitle = "Adelie Species Living on the Dream Island",
+       x="",
+       y="") + 
+  theme_bw() + 
+  theme(plot.title = element_text(size=16),
+        plot.subtitle =  element_text(size=16),
+        strip.text = element_text(size=14),
+        axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=16)
+        )
+```
+
+
+### Boxplots of numerical variables for all penguin species and islands
+
+```{r}
+df %>%
+  group_by(species) %>%
+  select_if(is.numeric) %>%
+  skimr::skim() %>%
+  filter(!(skim_variable == "year")) %>%
+  select(-c("skim_type","numeric.hist")) %>%
+  mutate(coef_var = numeric.sd/numeric.mean) %>%
+  mutate(across(where(is.numeric),~round(.,2))) %>%
+  select(c(1:6,12,everything()))
+```
+
+```{r}
+head(df)
+```
+
+```{r,fig.width=16,fig.height=10}
+df %>%
+  select(-c(year)) %>%
+  gather(c(3:6),key="key",value="val") %>%
+  ggplot(aes(x=species,y=val,fill=sex)) + 
+  geom_boxplot(outlier.shape = NA,alpha=0.5,size=1) + 
+  geom_jitter(shape=21,color="black",size=3,
+              position = position_jitterdodge(dodge.width = 0.75, jitter.width = 0.2))+ 
+  facet_wrap(~key + island,scales="free",labeller=label_both) +
+  labs(y="") + 
+  theme_bw() + 
+  theme(plot.title = element_text(size=16),
+        plot.subtitle =  element_text(size=16),
+        strip.text = element_text(size=14),
+        axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=16),
+        axis.title.x = element_text(size=14)
+        )
+```
+
+
+
+
