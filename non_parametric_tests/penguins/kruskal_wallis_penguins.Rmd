@@ -1,0 +1,215 @@
+---
+title: "Palmer Penguins - Comparing Body Weight Medians with Regard to Islands"
+author: "Piotr Wieczorek"
+date: "2023-12-08"
+output: 
+  html_document: 
+    toc: yes
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+
+```{r}
+rm(list=ls())
+```
+
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(naniar)
+library(scales)
+library(palmerpenguins)
+library(missForest)
+library(skimr)
+library(car)
+library(rstatix)
+library(ggpubr)
+library(png)
+```
+
+
+
+## Loading and cleaning the data
+
+
+```{r}
+df <- palmerpenguins::penguins
+```
+
+
+### Missing data imputation
+
+
+```{r}
+naniar::miss_var_summary(df) %>%
+  filter(n_miss > 0)
+```
+
+```{r}
+naniar::gg_miss_var(df[,!(colnames(df) %in% c("year","species","island"))])
+```
+
+```{r}
+df <- missForest(as.data.frame(df))
+```
+
+
+```{r}
+df$OOBerror
+```
+
+```{r}
+df <- df$ximp
+```
+
+
+
+### Mutating columns
+
+
+```{r}
+df <- df %>%
+  mutate_if(is.numeric,~round(.,2)) %>%
+  mutate(sex = as.character(sex)) %>%
+  mutate(sex = str_to_sentence(sex)) %>%
+  mutate(sex = as.factor(sex))
+```
+
+
+## Exploratory analysis
+
+
+### Exploring body_mass_g by island
+
+```{r}
+th <- theme(plot.title = element_text(size=18),
+            axis.title.x = element_text(size=16),
+            axis.title.y=element_text(size=16),
+            axis.text.x= element_text(size=14),
+            axis.text.y=element_text(size=14),
+            strip.text = element_text(size=16),
+            legend.title =  element_text(size=18),
+            legend.text  = element_text(size=14))
+```
+
+
+```{r,fig.width=12,fig.heigth=10}
+df %>%
+  select(c(island,body_mass_g,sex)) %>%
+  filter(sex=="Male") %>%
+  ggplot(aes(x=island,y=body_mass_g,fill=island,color=island)) + 
+  geom_boxplot()  +
+  geom_jitter(shape=21,size=3,
+              position = position_jitterdodge(dodge.width = 0.75, jitter.width = 0.5))+ 
+  scale_fill_manual(values=c("#EBF1AD","#ADF1CB","#70E1E7")) + 
+  scale_color_manual(values=c("#C8CD8E","#80B18B","#2D9BA0")) +
+  labs(title = "Body Mass Boxplots by Island",x="",y="")+
+  theme_bw() + th
+```
+
+
+
+### Exploring body_mass_g distributions by island
+
+ 
+```{r}
+df2<-df %>%
+  select(c(island,body_mass_g,sex)) %>%
+  filter(sex=="Male") %>%
+  select(c(1:2))
+```
+
+```{r}
+head(df2)
+```
+
+
+```{r,fig.width=14,fig.heigth=10}
+df2 %>%
+  ggplot(aes(x=body_mass_g,fill=island,color=island)) + 
+  geom_density() + 
+  scale_fill_manual(values=c("#EBF1AD","#ADF1CB","#70E1E7")) + 
+  scale_color_manual(values=c("#C8CD8E","#80B18B","#2D9BA0")) +
+  facet_wrap(~island,scales="free") + 
+  labs(title = "Body Mass Density Plots by Island",x="",y="")+
+  theme_bw() + th
+```
+
+
+## Checking statistical assumptions for ANOVA test - normal distributions and homoscedasticity
+
+
+### Normality assumption
+
+
+```{r}
+shapiro.test(df2[df2$island=="Biscoe","body_mass_g"])
+```
+
+```{r}
+shapiro.test(df2[df2$island=="Dream","body_mass_g"])
+```
+
+```{r}
+shapiro.test(df2[df2$island=="Torgersen","body_mass_g"])
+```
+
+### Conclusion
+
+#### body_mass_g is not normally distributed among penguins living on the Biscoe island
+
+
+```{r}
+leveneTest(body_mass_g ~ island, data= df2)
+```
+
+
+### Conclusion
+
+#### The variance is not equal among islands
+
+
+## Kruskal-Wallis test
+
+
+### Formula
+```{r,fig.width=8,fig.height=3}
+ggplot() + 
+    background_image(readPNG("images/kwtest.png"))
+```
+
+
+
+```{r}
+kruskal_wallis_test <- kruskal.test(formula = body_mass_g ~ island, data = df2)
+```
+
+
+
+```{r}
+kruskal_wallis_test
+```
+
+
+### Conclusion
+
+#### The medians among penguins living on different islands are not equal at least for one pair of islands
+
+
+## Dunn test
+```{r}
+dunn_test(data=df2,formula=body_mass_g~island)
+```
+
+
+### Conclusion
+
+#### 1. The body_mass_g medians among penguins living on the Dream and Torgersen island are not different in terms of statistical signifance
+#### 2. The body_mass_g medians among penguins living on the Dream and Biscoe island are different in terms of statistical significane
+#### 3. The body_mass_g medians among penguins living on the Biscoe and Torgersen island are different in terms of statistical signifance
