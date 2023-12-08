@@ -1,0 +1,260 @@
+---
+title: "Var Model - Predicting Number of Dwellings for which planning permission has been granted or an application has been made with a construction project"
+author: "Piotr Wieczorek"
+date: "2023-12-07"
+output: 
+  html_document: 
+    toc: yes
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(lubridate)
+library(zoo)
+library(patchwork)
+library(tseries)
+library(forecast)
+library(vars)
+library(Metrics)
+library(lmtest)
+```
+
+## Reading and cleaning the data
+
+```{r}
+df <- read_excel('Mieszkania.xlsx')
+```
+
+
+
+### Changing colnames
+
+
+
+```{r}
+colnames(df) <- c("time",
+"dwellings_planning_permission_granted",
+"general_business_climate_index_construction",
+"reference_interest_rate",
+"inflation_rate"
+)
+```
+
+
+```{r}
+head(df)
+```
+
+### Mutating columns
+
+```{r}
+df <- df %>%
+  mutate(across(c(2:5),~str_replace_all(.,",","."))) %>%
+  mutate(across(c(2:5),~as.numeric(.))) %>%
+  mutate(inflation_rate = inflation_rate - 100)
+```
+
+
+```{r}
+df <- df %>%
+  mutate(time = as.factor(time))
+```
+
+```{r}
+df$time <- zoo::as.yearqtr(df$time,format="%Y-%qQ")
+```
+
+
+```{r}
+head(df)
+```
+
+### Creating time series objects
+
+```{r}
+ts_dwellings_planning_permission_granted <- ts(df$dwellings_planning_permission_granted,start=c(2000,1),frequency = 4)
+ts_general_business_climate_index_construction <- ts(df$general_business_climate_index_construction,start=c(2000,1),frequency = 4)
+#ts_reference_interest_rate <- ts(df$reference_interest_rate, start=c(2000,1),frequency = 4)
+ts_inflation_rate <- ts(df$inflation_rate,start=c(2000,1),frequency = 4)
+```
+
+
+```{r}
+th <- theme(plot.title=element_text(size=18),
+            axis.title.x = element_text(size=16),
+            axis.title.y = element_text(size=16),
+            axis.text.x = element_text(size=14),
+            axis.text.y = element_text(size=14),
+            legend.title = element_text(size=18),
+            legend.text = element_text(size=14))
+```
+
+
+
+## Exploratory analysis
+
+### Plotting the data
+
+```{r,fig.width=12,fig.height=6}
+p1 <- df %>%
+  ggplot(aes(x=time,y=dwellings_planning_permission_granted)) + 
+  geom_line(lwd=1.4)+ labs(y="",title="Permission Granted for New Dwellings") + theme_minimal()  + th
+
+
+
+p2 <- df %>%
+  ggplot(aes(x=time,y=general_business_climate_index_construction))  +
+  geom_line(lwd=1.4) +  labs(y="",title="General Construction Business Climate Index") + theme_minimal()+ th
+
+p3<- df %>%
+  ggplot(aes(x=time , y = inflation_rate)) + 
+  geom_line(lwd=1.4) + labs(y="",title = "Inflation Rate") + theme_minimal() +  th
+
+(p1+p2)/(p3)
+```
+
+
+
+### ADF tests
+
+
+```{r}
+adf.test(ts_dwellings_planning_permission_granted)
+```
+
+
+```{r}
+adf.test(ts_general_business_climate_index_construction)
+```
+
+```{r}
+adf.test(ts_inflation_rate)
+```
+
+
+## Modeling
+
+### Binding times series data by columns
+
+```{r}
+df2 <- cbind(ts_dwellings_planning_permission_granted,ts_general_business_climate_index_construction,ts_inflation_rate)
+```
+
+
+### Selecting optimal lag for the model
+
+
+```{r}
+VARselect(df2,lag.max = 4)
+```
+
+
+
+### Model formula
+
+
+```{r}
+estim <- VAR(df2,p=4,type="const")
+```
+
+
+### Summary
+
+```{r}
+summary(estim$varresult$ts_dwellings_planning_permission_granted)
+```
+
+### Calculating MAE and MAPE
+
+```{r}
+mod_res <- estim$varresult$ts_dwellings_planning_permission_granted$residuals
+mod_fit <- estim$varresult$ts_dwellings_planning_permission_granted$fitted.values
+```
+
+```{r}
+mean(abs(mod_res))
+```
+
+```{r}
+actual_values <- ts_dwellings_planning_permission_granted[5:95]
+predicted_values <- estim$varresult$ts_dwellings_planning_permission_granted$fitted.values
+```
+
+```{r}
+mae(actual_values,predicted_values)
+```
+```{r}
+mape(actual_values,predicted_values) #mozna policzyc mape dlatego ze w zadnym z actual_values nie ma 0
+```
+
+### Casuality tests
+
+
+####  Pr(>F) < 0.05 implies that there is statistical evidence to support the idea that past values of ts_inflation_rate Granger cause ts_dwellings_planning_permission_granted.
+
+```{r}
+lmtest::grangertest(ts_dwellings_planning_permission_granted~ts_inflation_rate,order=4)
+```
+
+####  Pr(>F) < 0.05 implies that there is statistical evidence to support the idea that past values of ts_general_business_climate_index_construction Granger cause ts_dwellings_planning_permission_granted.
+
+
+```{r}
+lmtest::grangertest(ts_dwellings_planning_permission_granted~ts_general_business_climate_index_construction,order=4)
+```
+
+
+### Forecast error variance decomposition
+
+#### Both inflation rate and general business climate index for construction have an impact on explaining forecast error of the ts_dwellings_planning_permission_granted variable
+
+
+```{r,fig.width=10,fig.height=10}
+plot(fevd(estim, n.ahead =8))
+```
+
+
+### Impulse response function
+
+
+#### There is an increase of ts_dwellings_planning_permission_granted as a reaction to the sudden (positive) shock in ts_general_business_climate_index_construction
+
+
+```{r,fig.width=12,fig.height=8}
+plot(irf(estim,impulse="ts_general_business_climate_index_construction",response = "ts_dwellings_planning_permission_granted",n.ahead = 4),main="Reaction of ts_dwellings_planning_permission_granted on ts_general_business_climate_index_construction impulse",cex=1.25)
+```
+
+
+
+#### There is a decrease of ts_dwellings_planning_permission_granted as a reaction to the sudden (positive) shock in ts_inflation_rate
+
+
+```{r,fig.width=12,fig.height=8}
+plot(irf(estim,impulse="ts_inflation_rate",response = "ts_dwellings_planning_permission_granted",n.ahead = 4),main="Reaction of ts_dwellings_planning_permission_granted on ts_inflation_rate impulse",cex=1.25)
+```
+
+
+
+```{r,fig.width=10,fig.height=10}
+plot(predict(estim,n.ahead = 12))
+```
+
+
+
+
+
+
+
+
