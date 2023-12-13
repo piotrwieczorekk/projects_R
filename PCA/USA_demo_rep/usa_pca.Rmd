@@ -16,11 +16,11 @@ knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
 
 #### **This project aims to demonstrate whether or not US states that are governed by either democrat or republican politicians can be grouped and explained by following variables:**
 
-1. homelessness - homelessness per 100000 inhabitants in respective state
+1. homelessness_rate - homelessness per 100000 inhabitants in respective state
 2. homicide_mortality_rate - homicide mortality per 100000 inhabitants in respective state
 3. guns_ownership - number of guns owned by inhabitants in respective state
-4. suicide_rate - number of suicide cases by inhabitants in respective state
-5. rape_rate - number of rape cases by inhabitants in respective state
+4. suicide_rate - number of suicide cases per 100000 inhabitants in respective state
+5. rape_rate - number of rape cases per 100000 inhabitants in respective state
 
 
 ```{r}
@@ -182,8 +182,10 @@ usa_guns <- usa_guns %>%
 usa_homeless <- read_excel("usa_homelessness.xlsx")
 ```
 
+
 ```{r}
 usa_homeless <- usa_homeless %>%
+  rename(homelessness_rate = "homelessness") %>%
   arrange(state)
 ```
 
@@ -243,7 +245,7 @@ merged_df <- merged_df %>%
 
 ```{r}
 merged_df <- merged_df %>%
-  select(c("suicide_rate","rape_rate","guns_ownership","homelessness","homicide_mortality_rate",
+  select(c("suicide_rate","rape_rate","guns_ownership","homelessness_rate","homicide_mortality_rate",
            "governor"))
 ```
 
@@ -293,7 +295,7 @@ pca_scores <- pca$x[,c("PC1","PC2")]
 * if suicide_rate increases, PCA1 strongly increases and PC2 slightly decreases
 * if rape_rate increases, PCA1 increases strongly and PC2 increases slightly
 * if guns_ownership increases, PC1 increases strongly and PC2 decreases
-* if homelessness increases, it has a slight positive effect on PC1, PC2 strongly increases
+* if homelessness_rate increases, it has a slight positive effect on PC1, PC2 strongly increases
 * if homicide_mortality_rate increases, PC1 slightly decreases and PC2 strongly decreases
 
 
@@ -328,7 +330,7 @@ fviz_contrib(pca,choice="var",axes=2)
 
 #### Based on the PCA Plot:
 1. Variables that are positively correlated: rape_rate, suicide_rate, guns_ownership
-2. Variables that are negatively correlated: homelessness and homicide_mortality_rate
+2. Variables that are negatively correlated: homelessness_rate and homicide_mortality_rate
 
 ```{r,fig.width=10}
 fviz_pca_var(pca, 
