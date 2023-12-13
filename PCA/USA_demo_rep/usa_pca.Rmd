@@ -1,0 +1,386 @@
+---
+title: "PCA Analysis on the example of data regarding US states"
+author: "Piotr Wieczorek"
+date: "2023-12-11"
+output: 
+  html_document: 
+    toc: yes
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+## Goal of the project
+
+#### **This project aims to demonstrate whether or not US states that are governed by either democrat or republican politicians can be grouped and explained by following variables:**
+
+1. homelessness - homelessness per 100000 inhabitants in respective state
+2. homicide_mortality_rate - homicide mortality per 100000 inhabitants in respective state
+3. guns_ownership - number of guns owned by inhabitants in respective state
+4. suicide_rate - number of suicide cases by inhabitants in respective state
+5. rape_rate - number of rape cases by inhabitants in respective state
+
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+```{r}
+library(factoextra)
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(gridExtra)
+```
+
+
+## Loading and cleaning the data
+
+```{r}
+usa_gdp_per_capita <- read_excel("usa_gdp_per_capita.xlsx")
+usa_gdp_per_capita <- janitor::clean_names(usa_gdp_per_capita)
+```
+
+```{r}
+head(usa_gdp_per_capita)
+```
+
+
+```{r}
+usa_gdp_per_capita$state_or_federal_district <- sub("\\s*\\*", "",usa_gdp_per_capita$state_or_federal_district)
+usa_gdp_per_capita$state_or_federal_district  <- str_trim(usa_gdp_per_capita$state_or_federal_district)
+```
+
+```{r}
+usa_gdp_per_capita$nominal_gdp_pc <- str_replace(usa_gdp_per_capita$nominal_gdp_pc,",",".")
+usa_gdp_per_capita$nominal_gdp_pc <- str_sub(usa_gdp_per_capita$nominal_gdp_pc,start = 2)
+```
+
+```{r}
+usa_gdp_per_capita <- usa_gdp_per_capita %>%
+  mutate(nominal_gdp_pc = as.numeric(nominal_gdp_pc))
+```
+
+```{r}
+head(usa_gdp_per_capita)
+```
+
+
+```{r}
+usa_drug_overdose <- read.csv("usa_drug_overdose.csv")
+```
+
+```{r}
+usa_drug_overdose <- usa_drug_overdose %>%
+  filter(YEAR==2021) %>%
+  select(STATE,RATE) %>%
+  mutate(RATE = as.numeric(RATE))
+```
+
+
+
+```{r}
+usa_suicide <- read.csv("usa_suicide.csv")
+```
+
+```{r}
+usa_suicide <- usa_suicide %>%
+  filter(YEAR == 2021) %>%
+  select(STATE,RATE) %>%
+  mutate(RATE=as.numeric(RATE))
+```
+
+```{r}
+usa_homicide_mortality <- read.csv("usa_homicide_mortality.csv")
+```
+
+```{r}
+usa_homicide_mortality <- usa_homicide_mortality %>%
+  filter(YEAR==2021) %>%
+  select(STATE,RATE) %>%
+  mutate(RATE = as.numeric(RATE))
+```
+
+
+```{r}
+codes <- read_excel("us_states_code.xlsx")
+```
+
+```{r}
+head(codes)
+```
+```{r}
+usa_suicide <- inner_join(usa_suicide,codes,by = c("STATE"="state_code"))
+usa_homicide_mortality <- inner_join(usa_homicide_mortality,codes,by=c("STATE"="state_code"))
+usa_drug_overdose <- inner_join(usa_drug_overdose,codes,by=c("STATE"="state_code"))
+```
+
+```{r}
+usa_drug_overdose <- usa_drug_overdose %>%
+  select(-c("STATE"))
+
+usa_homicide_mortality <- usa_homicide_mortality %>%
+  select(-c("STATE"))
+
+usa_suicide <- usa_suicide %>%
+  select(-c("STATE"))
+
+usa_suicide <- clean_names(usa_suicide)
+usa_homicide_mortality <- clean_names(usa_homicide_mortality)
+usa_drug_overdose <- clean_names(usa_drug_overdose)
+usa_gdp_per_capita <- clean_names(usa_gdp_per_capita)
+```
+
+```{r}
+colnames(usa_suicide)[1] <- "suicide_rate"
+usa_suicide <- usa_suicide %>%
+  arrange(state)
+
+colnames(usa_homicide_mortality)[1] <- "homicide_mortality_rate"
+usa_homicide_mortality <- usa_homicide_mortality %>%
+  arrange(state)
+
+colnames(usa_drug_overdose)[1] <- "drug_overdose_rate"
+usa_drug_overdose <- usa_drug_overdose %>%
+  arrange(state)
+
+colnames(usa_gdp_per_capita)[1] <- "state"
+usa_gdp_per_capita <- usa_gdp_per_capita %>%
+  arrange(state)
+```
+
+```{r}
+usa_governor <- read_excel("us_election_governor.xlsx")
+```
+
+
+
+```{r}
+usa_governor <- usa_governor %>%
+  select(c(1,3)) %>%
+  arrange(State) %>%
+  rename(state = "State") %>%
+  rename(governor = "Governor")
+```
+
+```{r}
+usa_guns <- read_excel("usa_guns.xlsx")
+```
+
+
+```{r}
+usa_guns <- usa_guns %>%
+  rename(state="State") %>%
+  arrange(state)
+```
+
+```{r}
+usa_homeless <- read_excel("usa_homelessness.xlsx")
+```
+
+```{r}
+usa_homeless <- usa_homeless %>%
+  arrange(state)
+```
+
+
+```{r}
+usa_rape <- read_excel("usa_rape.xlsx")
+```
+
+```{r}
+usa_rape <- usa_rape %>%
+  rename(state="State") %>%
+  arrange(state)
+```
+
+
+### Merging the data
+
+
+```{r}
+merged_df <- merge(usa_gdp_per_capita, usa_drug_overdose, by = "state", all.x = FALSE)
+
+merged_df <- merge(merged_df, usa_homicide_mortality, by = "state", all.x = FALSE)
+
+merged_df <- merge(merged_df, usa_suicide, by = "state", all.x = FALSE)
+
+merged_df <- merge(merged_df,usa_governor,by="state",all.x=FALSE)
+
+merged_df <- merge(merged_df, usa_guns,by="state",all.x=FALSE)
+
+merged_df <- merge(merged_df, usa_homeless, by="state",all.x=FALSE)
+
+merged_df <- merge(merged_df, usa_rape, by="state",all.x=FALSE)
+
+print(merged_df)
+```
+
+```{r}
+merged_df$nominal_gdp_pc <- gsub("\\.", "", as.character(merged_df$nominal_gdp_pc))
+merged_df$nominal_gdp_pc <- as.numeric(merged_df$nominal_gdp_pc)
+```
+
+```{r}
+head(merged_df)
+```
+
+
+```{r}
+row.names(merged_df) <- merged_df$state
+```
+
+```{r}
+merged_df <- merged_df %>%
+  select(-c("state"))
+```
+
+
+
+```{r}
+merged_df <- merged_df %>%
+  select(c("suicide_rate","rape_rate","guns_ownership","homelessness","homicide_mortality_rate",
+           "governor"))
+```
+
+
+
+## PCA Analysis
+
+### Bartlett test of homogeneity of variances 
+
+```{r}
+bartlett.test(x = merged_df %>% select_if(is.numeric), nrow(merged_df))
+```
+
+
+```{r}
+pca <- prcomp(merged_df[,1:5],scale. = TRUE)
+```
+
+
+### Dimensionality -  cumulative variance proportion
+
+
+```{r}
+summary(pca)
+```
+
+### Eigen vectors
+
+```{r}
+pca$rotation
+```
+
+
+
+### Correlation between pca scores and numerical data from merged_df
+
+
+```{r}
+pca_scores <- pca$x[,c("PC1","PC2")]
+```
+
+
+
+### Correlation between numerical variables and pca scores
+
+#### Based on the correlations:
+* if suicide_rate increases, PCA1 strongly increases and PC2 slightly decreases
+* if rape_rate increases, PCA1 increases strongly and PC2 increases slightly
+* if guns_ownership increases, PC1 increases strongly and PC2 decreases
+* if homelessness increases, it has a slight positive effect on PC1, PC2 strongly increases
+* if homicide_mortality_rate increases, PC1 slightly decreases and PC2 strongly decreases
+
+
+```{r}
+cor(merged_df[,1:5],pca_scores)
+```
+
+
+### Scree plot
+
+#### Overall, Dim1 and Dim2 capture 67% of variance
+
+
+```{r}
+fviz_eig(pca,addlabels = TRUE)
+```
+
+### Variables contribution to Dim1
+
+
+```{r}
+fviz_contrib(pca,choice="var")
+```
+
+### Variables contribution to Dim2
+
+```{r}
+fviz_contrib(pca,choice="var",axes=2)
+```
+
+### PCA Plot
+
+#### Based on the PCA Plot:
+1. Variables that are positively correlated: rape_rate, suicide_rate, guns_ownership
+2. Variables that are negatively correlated: homelessness and homicide_mortality_rate
+
+```{r,fig.width=10}
+fviz_pca_var(pca, 
+             repel = TRUE,
+             col.circle = "red",
+             col.var="blue")+
+  labs(title = "PCA Plot",
+       x = "PCA 1",
+       y = "PCA 2")
+```
+
+### Biplot
+
+#### Based on the Biplot:
+1. Democratic states are positioned higher regarding Dim2. Homelessness has the biggest influence on this dimension and therefore one could conclude that democratic states (especially Hawaii, California, New York, Oregon, Maine, Massachusetts,Washington) are more characterized by high homelessness rate than republican states. The only one republican state that exhibits such high homelessness rate is Vermont.
+
+
+2. Overall, the majority of republican states are focused around the mean values of explored variables. The only exceptions are: Alaska, Wyoming, Mississippi, Vermont. Note that Alaska and Wyoming exhibit consequently the first and the second highest suicide rate. Mississippi has the highest homicide_mortality_rate, Vermont has the second highest homelessness rate.
+
+3. The majority of democratic states are located in the left half of the plot (negative Dim1 values). Overall democratic states exhibit lower suicide rate which is crucial for the first dimension (correlation between suicide rate and PC1 equals to ~0.92). Moreover, rape_rate also tends to be lower for democratic states (correlation between rape_rate and PC1 equals to ~0.76).
+
+
+
+```{r,fig.width=10,fig.height=6}
+
+ellipse_colors <- c("green","red")
+fviz_pca_biplot(pca, col.ind = merged_df$governor, 
+                addEllipses = TRUE, 
+                palette = c("blue","red"),
+                repel = TRUE)
+```
+
+
+```{r,fig.width=15,fig.height=7}
+grid.arrange(
+  
+  merged_df %>%
+  ggplot(aes(x=governor,y=rape_rate,fill=governor)) +
+  geom_boxplot() + 
+  scale_fill_manual(values=c("blue","red")) + 
+  labs(title = "Rape Rate in the US by State Governor Political Affiliation") + 
+  theme_bw(base_size = 15),
+  
+  merged_df %>%
+  ggplot(aes(x=governor,y=suicide_rate,fill=governor)) +
+  geom_boxplot() + 
+  scale_fill_manual(values=c("blue","red")) + 
+  labs(title = "Suicide Rate in the US by State Governor Political Affiliation") + 
+  theme_bw(base_size = 15),
+  ncol=2,nrow=1
+)
+
+```
+
+
