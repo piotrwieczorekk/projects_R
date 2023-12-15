@@ -1,0 +1,351 @@
+---
+title: "Using ggplotly and ggplot2 on the gapminder data set"
+author: "Piotr Wieczorek"
+date: "2023-12-15"
+output: 
+  html_document: 
+    toc: yes
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(gapminder)
+library(gridExtra)
+library(scales)
+library(plotly)
+library(manipulateWidget)
+```
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+df <- gapminder
+```
+
+
+```{r}
+head(df)
+```
+
+```{r}
+colSums(is.na(df))
+```
+
+```{r}
+df_2007 <- df %>%
+  mutate_at(c("lifeExp","gdpPercap"),~round(.x,2)) %>%
+  filter(year==2007)
+```
+
+```{r}
+df_2007 %>%
+  group_by(continent) %>%
+  summarise_if(is.numeric, ~mean(.x), .names = "{col}_mean")
+```
+
+
+## Life expectancy
+
+
+### Average Life Expectancy by Continent
+
+```{r, fig.width=8,fig.height=6,fig.align='left'}
+ p1 <- df_2007 %>%
+  group_by(continent) %>%
+  summarise(across(where(is.numeric),~mean(.x),.names = "{col}_avg")) %>%
+  select(-c(2)) %>%
+  mutate(continent = fct_reorder(continent,lifeExp_avg)) %>%
+  #gather(c(2:4),key="key",value="val") %>%
+  ggplot(aes(x=continent,y=lifeExp_avg,fill=lifeExp_avg,text=paste("Continent:",continent,"\nAverage Life         Expectancy:",round(lifeExp_avg,2)))) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label = comma(round(lifeExp_avg,2))),vjust=-0.2) + 
+  scale_fill_gradient(low="#415B46",high="#9FF3AE") + 
+  labs(title = "Average Life Expectancy by Continent",
+       y="Average life expectancy",
+       x="Continent") + 
+  coord_cartesian(ylim=c(50,85)) + 
+  theme_bw(base_size = 15) + 
+  theme(legend.position = "none")
+
+  p1 <- ggplotly(p1,tooltip = "text")
+
+  p1
+```
+
+
+
+
+### Life expectancy distributions by continent
+
+```{r,fig.align='left'}
+p4 <- df_2007 %>%
+  select(c("continent","lifeExp")) %>%
+  ggplot(aes(x=lifeExp,fill=continent)) + 
+  geom_density(alpha=0.4) +
+  facet_wrap(.~continent,scales="free",nrow = 5) + 
+  theme_bw(base_size = 12)
+
+ggplotly(p4,width = 1000,height = 800)
+```
+
+
+### Boxplots of Life expectancy by continent
+
+
+```{r, fig.width=10,fig.height=8,fig.align='left'}
+df_2007 %>%
+  filter(!(continent == "Oceania")) %>%
+  plot_ly(
+    x = ~continent,
+    y = ~lifeExp,
+    type = "box",
+    boxpoints = "all",  
+    jitter = 0.3,       
+    pointpos = -1.8,
+    text = ~paste("Country:", country, "<br>Life Expectancy:", comma(lifeExp)),
+    hoverinfo = "text",
+    fillcolor = ~continent) %>%
+    layout(
+    title = list(text="Boxplots of Life Expectancy by Continent",
+                 y=0.975),
+    yaxis = list(title = "Life expectancy", tickformat = ","),
+    xaxis=list(title="Continent"),
+    showlegend = FALSE,
+    font=list(size=14)
+  )
+```
+
+
+
+## Gdp per capita
+
+### Average gdp per capita by continent
+
+
+```{r, fig.width=8,fig.height=6,fig.align='left'}
+p3 <- df_2007 %>%
+  group_by(continent) %>%
+  summarise(across(where(is.numeric),~mean(.x),.names = "{col}_avg")) %>%
+  select(-c(2)) %>%
+  mutate(continent = fct_reorder(continent,gdpPercap_avg)) %>%
+  #gather(c(2:4),key="key",value="val") %>%
+  ggplot(aes(x=continent,y=gdpPercap_avg,fill=gdpPercap_avg,text=paste("Continent:",continent,"\nAverage Gdp Per Capita:",scales::comma(round(gdpPercap_avg,2))))) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label = comma(round(gdpPercap_avg,2))),vjust=-0.2)+ 
+  scale_fill_gradient(low="#415B46",high="#9FF3AE") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Average Gdp Per Capita by Continent",
+       y="Average GDP per capita",
+       x="Continent") + 
+  coord_cartesian(ylim=c(3000,30000)) + 
+  theme_bw(base_size = 15) + 
+  theme(legend.position = "none")
+  
+  p3 <- ggplotly(p3,tooltip = "text")
+  
+  p3
+```
+
+
+### Boxplots of gdp per capita by continent
+
+
+```{r, fig.width=10,fig.height=8,fig.align='left'}
+df_2007 %>%
+  filter(!(continent == "Oceania")) %>%
+  plot_ly(
+    x = ~continent,
+    y = ~gdpPercap,
+    type = "box",
+    boxpoints = "all",  
+    jitter = 0.3,       
+    pointpos = -1.8,
+    text = ~paste("Country:", country, "<br>GDP Per Capita:", comma(gdpPercap)),
+    hoverinfo = "text",
+    fillcolor = ~continent) %>%
+  layout(
+     title = list(
+      text = "Boxplots of Gdp Per Capita by Continent",
+      y = 0.975  # Adjust the y value to lower or raise the title
+    ),
+    yaxis = list(title = "GDP Per Capita", tickformat = ","),
+    xaxis=list(title="Continent"),
+    showlegend = FALSE,
+    font=list(size=14)
+  )
+```
+
+
+## Population
+
+
+### Average population by continent
+
+```{r, fig.width=8,fig.height=6,fig.align='left'}
+
+ p2 <- df_2007 %>%
+  group_by(continent) %>%
+  summarise(across(where(is.numeric),~mean(.x),.names = "{col}_avg")) %>%
+  select(-c(2)) %>%
+  mutate(continent = fct_reorder(continent,pop_avg)) %>%
+  #gather(c(2:4),key="key",value="val") %>%
+  ggplot(aes(x=continent,y=pop_avg,fill=pop_avg,text=paste("Continent:",continent,"\nAverage Population:",scales::comma(round(pop_avg,2))))) + 
+  geom_bar(stat="identity") +
+    geom_text(aes(label = comma(round(pop_avg,2))),vjust=-0.2) + 
+  scale_fill_gradient(low="#415B46",high="#9FF3AE") + 
+    labs(title = "Average Population by Continent",
+         y="Average population",
+         x="Continent") + 
+    coord_cartesian(ylim=c(10000000,120000000)) + 
+  theme_bw(base_size = 15) + 
+  theme(legend.position = "none")
+  
+  p2 <- ggplotly(p2,tooltip="text")
+  
+p2
+```
+
+
+### Boxplots of population by continent
+
+
+```{r,fig.height=12,out.width='100%',fig.align='left'}
+plot_africa <- df_2007 %>%
+  filter(continent == "Africa") %>%
+  plot_ly(
+    y = ~continent,
+    x = ~pop,
+    type = "box",
+    boxpoints = "all",  
+    jitter = 0.3,       
+    pointpos = -1.8,
+    text = ~paste("Country:", country, "<br>Population:", comma(pop)),
+    hoverinfo = "text",
+    fillcolor = ~continent) %>%
+  layout(
+    yaxis = list(title = "Population", tickformat = ","),
+    xaxis=list(title="Continent"),
+    showlegend = FALSE,
+    font=list(size=14)) %>%
+  add_annotations(
+    x=0.5,y=1.0,
+    text="Boxplot of Population in Africa",
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  )
+
+plot_europe <- df_2007 %>%
+  filter(continent == "Europe") %>%
+  plot_ly(
+    y = ~continent,
+    x = ~pop,
+    type = "box",
+    boxpoints = "all",  
+    jitter = 0.3,       
+    pointpos = -1.8,
+    text = ~paste("Country:", country, "<br>Population:", comma(pop)),
+    hoverinfo = "text",
+    fillcolor = ~continent) %>%
+  layout(
+    yaxis = list(title = "Population", tickformat = ","),
+    xaxis=list(title="Continent"),
+    showlegend = FALSE,
+    font=list(size=14)) %>%
+  add_annotations(
+    x=0.5,y=1.0,
+    text="Boxplot of Population in Europe",
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  )
+
+plot_americas <- df_2007 %>%
+  filter(continent == "Americas") %>%
+  plot_ly(
+    y = ~continent,
+    x = ~pop,
+    type = "box",
+    boxpoints = "all",  
+    jitter = 0.3,       
+    pointpos = -1.8,
+    text = ~paste("Country:", country, "<br>Population:", comma(pop)),
+    hoverinfo = "text",
+    fillcolor = ~continent) %>%
+  layout(
+    yaxis = list(title = "Population", tickformat = ","),
+    xaxis=list(title="Continent"),
+    showlegend = FALSE,
+    font=list(size=14)) %>%
+  add_annotations(
+    x=0.5,y=1.0,
+    text="Boxplot of Population in Americas",
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  )
+
+
+plot_asia <- df_2007 %>%
+  filter(continent == "Asia") %>%
+  plot_ly(
+    y = ~continent,
+    x = ~pop,
+    type = "box",
+    boxpoints = "all",  
+    jitter = 0.3,       
+    pointpos = -1.8,
+    text = ~paste("Country:", country, "<br>Population:", comma(pop)),
+    hoverinfo = "text",
+    fillcolor = ~continent) %>%
+  layout(
+    yaxis = list(title = "Population", tickformat = ","),
+    xaxis=list(title="Continent"),
+    showlegend = FALSE,
+    font=list(size=14))%>%
+  add_annotations(
+    x=0.5,y=1.0,
+    text="Boxplot of Population in Asia",
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  )
+
+
+```
+
+```{r,fig.width=10,fig.height=12,fig.align='left'}
+subplot(
+  plot_africa,
+  plot_europe,
+  plot_americas,
+  plot_asia,
+  nrows = 4)
+```
+
+
+
+
+
+
+
+
+
+
