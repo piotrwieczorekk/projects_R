@@ -1,1 +1,1 @@
-gfdadfgadgf
+This directory contains ARIMA projects.
