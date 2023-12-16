@@ -1,0 +1,182 @@
+---
+title: "Using Prophet to predict newly registered vehicles in Poland"
+author: "Piotr Wieczorek"
+date: "2023-12-16"
+output: 
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(prophet)
+library(readxl)
+library(scales)
+library(gridExtra)
+```
+
+
+## Reading and cleaning the data
+
+
+```{r}
+df <- read_excel("time_series_vehicles_data.xlsx")
+```
+
+```{r}
+colnames(df) <- c("ds","y")
+```
+
+```{r}
+df[c(99,100),2] <- df[98,2]
+```
+
+```{r}
+head(df)
+```
+
+```{r}
+tail(df)
+```
+
+```{r,fig.width=10,fig.height=5}
+df %>%
+  ggplot(aes(x=ds,y=y)) + 
+  geom_line() + 
+  scale_y_continuous(labels=scales::comma) + 
+  labs(x="Date",y="Newly registered vehicles",title = "Newly Registered Vehicles in Poland") + 
+  theme_bw(base_size = 15)
+```
+
+## Modeling time series with prophet
+
+### Seasonality plot
+
+#### Conclusions regarding seasonality
+
+##### There is yearly seasonality. 
+
+##### There are less newly registered vehicles compared to the overall trend in following time stamps:
+
+* From Januar to mid Februar
+* From the beginning of May to to the beginning of June there is large drop. There are less newly registered vehicles compared to the overall trend
+* From the beginning of August to the beginning of September
+* From the beginning of October to the beginning of December
+*
+
+
+##### There are more newly registered vehicles compared to the overall trend in following time stamps:
+* From mid February to the beginning of May
+* From the beginning of June to the beginning of August (especially in June)
+* From the beginning of September to the beginning of October
+* From the beginning of December to late December
+
+```{r,fig.show='hide'}
+
+model <- prophet(df=df %>% arrange(ds),seasonality.mode = "additive")
+
+future <- make_future_dataframe(model, periods = 24, freq = "month")
+
+forecast <- predict(model,future)
+
+plot_list <- prophet_plot_components(model,forecast)
+```
+
+
+```{r,fig.width=10,fig.height=5}
+  
+plot_list[[2]] +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  scale_x_datetime(date_breaks = "month",date_labels = "%b") + 
+  scale_y_continuous(labels=comma)+
+  labs(title = "Seasonal Component",x="Time",y="Trend") + 
+  theme_bw(base_size = 14) 
+
+```
+
+### Trend plot
+
+#### Conclusions regarding trend
+
+##### Prophet uses piecewise trend. It's clear that the variable (newly registered vehicles in Poland) has been growing quite linearly from 2012 to ~2019, and has been declining since then also in an approximately linear fashion
+
+```{r,fig.width=10,fig.height=5}
+  
+  plot_list[[1]] + 
+  scale_x_datetime(date_breaks = "year",date_labels = "%Y") + 
+  scale_y_continuous(labels=comma) + 
+  labs(title = "Trend Component",x="Time",y="Trend") + 
+  theme_bw(base_size = 14)
+
+```
+
+
+```{r}
+paste("Seasonality mode:",model$seasonality.mode)
+paste("Growth mode:",model$growth)
+```
+
+
+#### Points where the trend changes
+
+
+```{r,fig.width=10,fig.height=5}
+plot(model,forecast) + 
+  add_changepoints_to_plot(model) + 
+  scale_x_datetime(date_breaks = "year",date_labels = "%Y") + 
+  scale_y_continuous(labels=scales::comma) + 
+  theme_bw(base_size = 14)
+```
+
+### Interactive prediction plot
+
+```{r,fig.width=10,fig.height=5}
+dyplot.prophet(model,forecast,main="Prophet Prediction") 
+```
+
+
+### MAE and MAPE metrics
+
+
+```{r}
+# Calculate MAE
+mae <- mean(abs(forecast$yhat - df$y))
+print(paste("Mean Absolute Error (MAE):", mae))
+```
+ 
+
+```{r}
+# Calculate MAPE
+mape <- mean(abs((df$y - forecast$yhat) / df$y)) * 100
+print(paste0("Mean Absolute Percentage Error (MAPE): ", round(mape,2),"%"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
