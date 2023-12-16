@@ -1,1 +1,1 @@
-DFGADFGDAFGDAFG
+This directory contains GARCH projects.
