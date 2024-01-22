@@ -1,0 +1,255 @@
+---
+title: "Predykcja zakupu produktu przez klienta"
+author: "Piotr Wieczorek"
+date: "2024-01-21"
+output: 
+  html_document: 
+    toc: true
+    toc_depth: 4
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Cel projektu
+
+
+Celem projektu jest zastosowanie algorytmów klasyfikacyjnych w predykcji tego, czy klient dokona zakupu. Zastosowano następujące metody:
+1. Regresja logistyczna
+2. Las losowy
+3. Algorytm kNN
+
+
+## Biblioteki
+
+```{r}
+library(tidyverse)
+library(caret)
+library(missForest)
+library(janitor)
+library(naniar)
+library(MLmetrics)
+library(scales)
+library(readxl)
+library(fastDummies)
+library(randomForest)
+library(glue)
+library(class)
+```
+
+
+## Wczytanie i eksploracja danych
+
+
+```{r}
+df <- read_excel("dane_projekt2023.xlsx")
+```
+
+```{r}
+df <- df %>%
+  mutate_at(c("internet","kredytowa","plec","pozyczka","zakupy"),as.factor)
+```
+
+
+
+```{r}
+df %>%
+  select_if(is.factor) %>%
+  summary()
+```
+
+```{r}
+df %>%
+  select_if(is.numeric) %>%
+  summary()
+```
+
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  gather(c("asortyment","obsluga","dni","dochod","inne","wiek","odleglosc"),
+         key="key",value="val") %>%
+  ggplot(aes(x=zakupy, y=val, fill = plec)) + 
+  geom_boxplot() + 
+  scale_fill_brewer(palette="Set2") +
+  facet_wrap(~key,scales="free") + 
+  labs(x="Zakupy",y="",title="Wykresy skrzynkowe zmiennej zakupy w zależności od płci oraz zmiennych numerycznych") +
+  theme_bw()
+```
+
+
+## Modelowanie
+
+
+### Partycja danych
+
+```{r}
+set.seed(123)
+data_partition <- caret::createDataPartition(df$zakupy, p = 0.7, list =FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(nrow(train_set))
+print(nrow(test_set))
+```
+
+
+
+### Kodowanie dummmy variables
+
+```{r}
+train_set <- fastDummies::dummy_cols(train_set, select_columns = c("internet","kredytowa","plec","pozyczka"),remove_first_dummy = TRUE,remove_selected_columns = TRUE)
+
+test_set <- fastDummies::dummy_cols(test_set, select_columns = c("internet","kredytowa","plec","pozyczka"),remove_first_dummy = TRUE,remove_selected_columns = TRUE)
+```
+
+
+```{r}
+head(train_set)
+```
+
+### Regresja logistyczna 
+
+```{r}
+log_mod <- glm(formula = zakupy~., data = train_set,family="binomial")
+```
+
+
+```{r}
+print(summary(log_mod))
+```
+```{r}
+test_pred <- predict(log_mod,test_set,type = "response")
+```
+
+
+```{r}
+test_pred <- ifelse(test_pred >= 0.5,1,0)
+```
+
+
+
+```{r}
+ConfusionDF(y_pred = test_pred, y_true = test_set$zakupy)
+```
+
+
+#### Macierz konfuzji dla regresji logistycznej
+
+
+```{r}
+confusionMatrix(as.factor(test_pred),test_set$zakupy)
+```
+
+
+### Model random forest
+
+
+
+```{r}
+rf <- randomForest::randomForest(zakupy ~., data=train_set, ntree = 100, mtry = floor(sqrt(ncol(train_set))),importance=TRUE)
+```
+
+
+```{r}
+rf
+```
+
+
+#### Zależność OOB Error od ilości drzew
+
+
+```{r}
+plot(rf)
+```
+
+
+
+#### Variable Importance plot (w zależności od przeciętnego spadku dokładności)
+
+
+
+```{r}
+varImpPlot(rf,type=1)
+```
+
+
+#### Macierz konfuzji dla lasu losowego
+
+
+```{r}
+confusionMatrix(predict(rf,test_set),test_set$zakupy)
+```
+
+
+### Algorytm kNN
+
+#### Skalowanie danych
+
+```{r}
+train_set_scaled <- train_set %>%
+  select(c("zakupy","odleglosc","wiek","inne","dochod","dni","obsluga","asortyment")) %>%
+  mutate(across(where(is.numeric),~scale(.x)))
+
+test_set_scaled <- test_set%>%
+  select(c("zakupy","odleglosc","wiek","inne","dochod","dni","obsluga","asortyment")) %>%
+  mutate(across(where(is.numeric),~scale(.x)))
+```
+
+```{r}
+head(train_set_scaled)
+```
+
+```{r}
+train_set_scaled_features <- train_set_scaled[,2:8]
+train_set_scaled_target <- train_set_scaled[,1]
+
+test_set_scaled_features <- test_set_scaled[,2:8]
+test_set_scaled_target <- test_set_scaled[,1]
+```
+
+
+
+```{r}
+test_set_scaled_features
+```
+
+#### Szukanie optymalnego parametru "k" (liczby najbliższych sąsiadów)
+
+```{r}
+set.seed(123)
+for (k in 1:10) {
+  pr <- knn(train_set_scaled_features, test_set_scaled_features, cl = train_set_scaled_target$zakupy, k = k)
+  accuracy <- sum(pr == test_set_scaled_target$zakupy) / length(test_set_scaled_target$zakupy)
+  print(glue("k = {k}, Accuracy = {accuracy}"))
+}
+```
+
+
+```{r}
+pr <- knn(train_set_scaled_features,test_set_scaled_features,cl=train_set_scaled_target$zakupy,k=9)
+```
+
+
+
+#### Macierz konfuzji dla algorytmu kNN
+
+
+```{r}
+confusionMatrix(as.factor(pr),as.factor(test_set_scaled_target$zakupy))
+```
+
+
+## Wnioski
+
+Wszystkie metody wykazują bardzo podobne wartości accuracy (% poprawnie odgadniętych przez model obserwacji), sensitivity (% poprawnie odgadniętej przez model pozytywnej klasy) oraz specificity (% poprawnie odgadniętej przez model negatywnej klasy). Ranking zastowanych metod w zależności od accuracy score:
+1. Las losowy
+2. Algorytm kNN
+3. Regresja logistyczna
