@@ -1,1 +1,1 @@
-
+--- IMPORTANT --- the whole executed code can be seen via html: https://piotrwieczorekk.github.io/projects_R/classification_algorithms/kNN_classification/predykcja_zakupu/predykcja_zakupu_reglog_rf_knn.html alternatively you can navigate to the html file and download it, or download the Rmd file and open it in R
