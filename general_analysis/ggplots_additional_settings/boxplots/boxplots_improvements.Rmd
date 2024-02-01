@@ -1,0 +1,205 @@
+---
+title: "Boxplots - Additional Improvements"
+author: "Piotr Wieczorek"
+date: "2024-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message=FALSE,warning=FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(ggstatsplot)
+library(gapminder)
+library(ggforce)
+library(Hmisc)
+library(plotly)
+library(patchwork)
+```
+
+
+```{r}
+df <- gapminder
+```
+
+
+```{r}
+table(df$continent)
+```
+
+
+
+```{r}
+df <- df %>%
+  filter(year==2007 & !(continent %in% c("Oceania"))) %>%
+  select(country,continent,lifeExp)
+```
+
+
+```{r}
+df$continent <- reorder(df$continent, df$lifeExp, median)
+```
+
+```{r}
+df$continent <- droplevels(df$continent)
+```
+
+
+```{r}
+table(df$continent)
+```
+
+
+
+
+```{r,fig.width=8,fig.height=4}
+p1 <- df %>%
+  ggplot(aes(x=continent,y=lifeExp,fill=continent)) + 
+  geom_boxplot(alpha=0.75,show.legend=TRUE) + 
+  geom_violin(alpha=0.25,show.legend=FALSE) + 
+  labs(x="Continent",y="Life expectancy",title="Life Expectancy by Continent",caption= "Source: gapminder data set") +
+  scale_fill_brewer(palette="Set1") + 
+  theme_minimal(base_family = "Times New Roman",base_size=14) + 
+  theme(plot.title = element_text(hjust=0.5,
+                                  face="bold"),
+        axis.title.x = element_text(face="italic"),
+        axis.title.y =element_text(face="italic"),
+        plot.caption =  element_text(face="italic")) + 
+  ggpubr::bgcolor("#FEFEFA")
+```
+
+```{r,fig.width=10,fig.height=6}
+p1
+```
+
+
+
+```{r}
+continent_count <- df%>%
+  group_by(continent)%>%
+  count()
+```
+
+
+
+```{r,fig.width=8,fig.height=4}
+p2 <- df %>%
+  ggplot(aes(x=continent,y=lifeExp,fill=continent)) + 
+  geom_boxplot(alpha=0.75,show.legend = TRUE) + 
+  #geom_violin(alpha=0.25,show.legend=FALSE,adjust=0.75) + 
+  geom_dotplot(binaxis = "y",
+               binwidth = 1.25,
+               stackdir = "center",
+               show.legend = FALSE) + 
+  scale_fill_brewer(palette="Set1") + 
+  scale_x_discrete(labels = paste(continent_count$continent, "\nn = ",continent_count$n)) +
+  labs(x="Continent",y="Life expectancy",title="Life Expectancy by Continent",caption= "Source: gapminder data set") +
+  geom_hline(yintercept = mean(df$lifeExp, na.rm = T) ,
+             linetype = "dashed",
+             color = "green",
+             size = 1) + 
+  theme_minimal(base_family = "Times New Roman",base_size=14) + 
+  theme(plot.title = element_text(hjust=0.5,
+                                  face="bold"),
+        axis.title.x = element_text(face="italic"),
+        axis.title.y =element_text(face="italic"),
+        plot.caption =  element_text(face="italic")) + 
+  ggpubr::bgcolor("#FEFEFA")
+```
+
+```{r,fig.width=10,fig.height=6}
+p2
+```
+
+
+## Notes:
+1. ggbetweenstats() is used for creating boxplots as well as computing statistical tests (such as Welsh T test, T test, ANOVA, Kruskal - Wallis, Mann-Whitney)
+2. the package also computes post-hoc tests (if needed) such as Dunn test for the Kruskal-Wallis test and displays pairwise p-values
+
+
+```{r,fig.width=10,fig.height=6}
+p3 <- ggbetweenstats(data=df,
+               x = continent,
+               y = lifeExp,
+               type = "np",
+               palette = "Set1") + 
+  theme_minimal(base_size = 12) + 
+  ggpubr::bgcolor("#FEFEFA")
+
+p3
+```
+
+
+
+
+### Notes:
+1. notch=TRUE pictures 95% confidence interval around the median
+2. notch is calculated by this formula: the median +/- (1.57 * Q3 - Q1)/square root of n
+3. adding information on the X axis labels about the quantity of each category is possible by grouping the data (to get the count of each category) and using paste() function in the scale_x_discrete() function
+4. geom_sina() is a more robust alternative to geom_point() or geom_jitter()
+5. stat_summary() functions allow to picture both the mean and error bars around the mean 
+
+
+
+
+```{r,fig.width=10,fig.height=6}
+p4 <- ggplot(df,aes(x=continent,
+             y=lifeExp)) + 
+  geom_boxplot(alpha=0.75,
+               notch=TRUE,
+               fill="white",
+               outlier.colour = "white", outlier.size = 0) + 
+  scale_x_discrete(labels = paste(continent_count$continent, "\nn = ",continent_count$n)) +
+  geom_violin(alpha=0.1)+
+  ggforce::geom_sina(size=1.5,aes(y=lifeExp,color=continent,
+                                  text = paste0("Continent: ",continent,
+                                              "\nCountry: ",country,
+                                              "\nLife expectancy: ",lifeExp))) + 
+  stat_summary(fun.data = mean_cl_boot, 
+               geom="point",
+               color="blue",
+               size=5,
+               show.legend = FALSE)+
+  stat_summary(fun.data = mean_cl_boot, 
+               geom="errorbar",
+               color="blue",
+               size=1,
+               width=0.4)+
+  labs(x="Continent",y="Life expectancy",title="Life Expectancy by Continent",caption= "Source: gapminder data set") +
+  #scale_fill_brewer(palette="Set1") + 
+  scale_color_brewer(palette="Set1") + 
+  geom_hline(yintercept = mean(df$lifeExp, na.rm = T) ,
+             linetype = "dashed",
+             color = "green",
+             size = 1) + 
+  theme_bw(base_size=14,base_family = "Times New Roman") +
+  theme(plot.title = element_text(hjust=0.5,
+                                  face="bold"),
+        axis.title.x = element_text(face="italic"),
+        axis.title.y =element_text(face="italic"),
+        plot.caption =  element_text(face="italic"))+
+  ggpubr::bgcolor("#FEFEFA")
+```
+
+
+```{r,fig.width=10,fig.height=6}
+p4
+```
+
+```{r,fig.width=10,fig.height=6}
+ggplotly(p4,tooltip = "text")
+```
+
+
+
+
+
+
+
+
+
+
+
+
