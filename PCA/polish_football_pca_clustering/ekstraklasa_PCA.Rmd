@@ -1,0 +1,313 @@
+---
+title: "Najwyższa polska liga piłkarska (wszech czasów) - analiza PCA"
+author: "Piotr Wieczorek (174302), Adrian Kowalczyk (188359)"
+date: "2024-02-02"
+output: 
+  html_document: 
+    toc: true
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE, warning = FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+# Cz. 1 projektu - wykresy
+
+## Biblioteki
+
+```{r}
+library(readr)
+library(factoextra)
+library(tidyverse)
+library(kableExtra)
+library(kableExtra)
+library(ggpubr)
+library(gridExtra)
+library(hrbrthemes)
+library(plotly)
+library(ggrepel)
+```
+
+## Wczytanie danych
+
+```{r}
+df <- read.csv("C://Users//piotr//Desktop//pythonfiles//ekstraklasa_dane.csv")
+```
+
+
+
+```{r}
+df %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px',width="100%")
+```
+## Opis danych
+
+<h4>Dane zostały zescrapowane ze strony https://pl.wikipedia.org/wiki/Tabela_wszech_czas%C3%B3w_Ekstraklasy_w_pi%C5%82ce_no%C5%BCnej z zastosowaniem biblioteki selenium w pythonie i przedstawiają one podsumowanie sezonów 1927 - 2022/2023 najwyższej klasy rozgrywkowej klubowej piłki nożnej w Polsce. Drużyny, które nie istnieją (zostały rozwiązanie) lub obecnie reprezentują regiony należące do innych krajów ze względu na zmianę granic po II WŚ zostały usunięte ze zbioru danych.</h4>
+
+
+## Opis zmiennych
+1. nazwa_druzyny - nazwa klubu piłkarskiego
+2. liczba_sezonow - liczba sezonów, jaką dany klub rozegrał w najwyższej klasie rozgrywkowej
+3. tytuly_ligowe - liczba tytułów ligowych, jaką danych klub zdobył w najwyższej klasie rozgrywkowej
+4. liczba_meczy - liczba meczy, jaką dany klub rozegrał w najwyższej klasie rozgrywkowej
+5. liczba_punktow - liczba punktów, jaką dany klub zdobył grając w najwyższej klasie rozgrywkowej
+6. bramki_strzelone - liczba strzelonych przez dany klub bramek w najwyższej klasie rozgrywkowej
+7. bramki_stracone - liczba straconych przez dany klub bramek w najwyższej klasie rozgrywkowej
+8. bilans_bramek - różnica między strzelonymi i straconymi bramkami przez dany klub w najwyższej klasie rozgrywkowej
+9. liczba_zwyciestw - liczba wygranych przez dany klub meczy w najwyższej klasie rozgrywkowej
+10. liczba_remisow - liczba zremisowanych przez dany klub meczy w najwyższej klasie rozgrywkowej
+11. liczba_porazek - liczba przegranych przez dany klub meczy w najwyższej klasie rozgrywkowej
+
+## Wykresy
+
+### Wykres 1 - Ranking polskich klubów piłkarskich według tytułów ligowych
+
+#### Uzasadnienie: graficzna prezentacja najbardziej utytułowanych klubów w Polsce
+
+#### Wszystkie z tych klubów obecnie występują w najwyższej lidze i posiadają długą historię występów
+
+```{r,fig.width=10}
+df %>%
+  arrange(desc(tytuly_ligowe)) %>%
+  head(10) %>%
+  mutate(nazwa_druzyny = as.factor(nazwa_druzyny)) %>%
+  mutate(nazwa_druzyny = fct_reorder(nazwa_druzyny,tytuly_ligowe)) %>%
+  ggplot(aes(y=nazwa_druzyny,x=tytuly_ligowe,fill=tytuly_ligowe)) + 
+  geom_bar(stat="identity") + 
+  scale_fill_gradient(low="#1B4A9C",high="#A8B8D3")+
+  geom_text(aes(label=tytuly_ligowe),hjust=-0.25)+
+  labs(y="Klub piłkarski",x="Liczba tytułów ligowych",title="Ranking polskich klubów piłkarskich według tytułów ligowych") + 
+  theme_pubclean(base_size = 14,base_family = "Times New Roman") + 
+  guides(fill=FALSE)
+```
+
+### Wykres 2 - Ranking polskich klubów piłkarskich według średniej liczby strzelonych bramek na mecz
+
+#### Uzasadnienie: graficzna prezentacja klubów, które strzelały (lub strzelają jeśli dalej występują w ekstraklasie) najwięcej bramek w tej lidze
+
+#### W rankingu znajdują się jedne z najbardziej zasłużonych dla polskiej piłki nożnej klubów, takie jak Legia Warszawa, Ruch Chorzów, Górnik Zabrze, Wisła Kraków. Nieoczywistym jest pozycja Warty Poznań, która w rankingu jest na pierwszym miejscu. Jest to klub, który od 1947 roku nie osiągnał żadnego sukcesu w skali kraju, choć według zaprezentowanych statystyk, jest najbardziej bramkostrzelnym w swojej historii występów w najwyższej klasie rozgrywkowej polskiej piłki klubowej
+
+```{r,fig.width=10}
+p <- df %>%
+  mutate(sr_bramki_mecz = bramki_strzelone/liczba_meczy) %>%
+  arrange(desc(sr_bramki_mecz)) %>%
+  head(10) %>%
+  mutate(nazwa_druzyny = fct_reorder(nazwa_druzyny,sr_bramki_mecz)) %>%
+  ggplot(aes(x=sr_bramki_mecz,y=nazwa_druzyny,fill=sr_bramki_mecz,
+             text = paste("Nazwa drużyny:",nazwa_druzyny,"\nŚrednia strzelonych bramek na mecz:",round(sr_bramki_mecz,2)))) + 
+  scale_fill_gradient(low="#1B4A9C",high="#A8B8D3") +
+  geom_bar(stat="identity",colour="white") + 
+  labs(y="Średnia liczba strzelonych bramek na mecz",
+       x="Klub piłkarski",
+       title = "Ranking polskich klubów piłkarskich według średniej liczby strzelonych bramek na mecz")  + 
+  theme_classic(base_family = "Times New Roman",base_size=12) + 
+  guides(fill=guide_legend(title="Śr. strzelonych bramek/mecz"))
+
+ggplotly(p,tooltip="text")
+```
+
+
+### Wykres 3 - Zależność między liczbą strzelonych bramek a liczbą straconych bramek
+
+#### Uzasadnienie: Zastosowano wykres rozrzutu z naniesionym trendem w celu graficznego zbadania zależności (korelacji) pomiędzy tymi zmiennymi
+
+#### W danych występuje wyraźna pozytywna korelacja pomiędzy tymi zmiennymi - zespoły, które strzelają dużo bramek, również tracą dużo bramek
+
+```{r,fig.width=10}
+df %>%
+  ggplot(aes(x=bramki_stracone,y=bramki_strzelone,fill=bramki_strzelone)) + 
+  geom_point(shape=21,size=4,colour="black") + 
+  geom_smooth(method="lm",se=T,color="black")+
+  scale_fill_gradient(low="#1B4A9C",high="#A8B8D3") +
+  scale_x_continuous(breaks=seq(0,3000,500))+
+  scale_y_continuous(breaks=seq(0,4500,500))+
+  theme_bw(base_size=14,base_family = "Times New Roman") +
+  labs(x="Bramki stracone",y = "Bramki strzelone",title="Zależność liczby strzelonych bramek od liczby straconych bramek")
+```
+
+
+
+
+# Cz. 2 projektu - PCA
+
+#### Analiza głównych składowych (PCA) jest techniką stosowaną w celu zmniejszenia wymiarowości zbiorów danych przy jednoczesnym zachowaniu kluczowych informacji (przy możliwie jak najmniejszej utracie objaśnianej wariancji). Odbywa się to poprzez przekształcenie oryginalnych zmiennych w zestaw nowych, nieskorelowanych zmiennych. (źródło: https://www.analyticsvidhya.com/blog/2016/03/pca-practical-guide-principal-component-analysis-python/)
+
+## Selekcja zmiennych
+
+#### W danych znajdują się zmienne które są ze sobą zbyt silnie powiązane (jedna zmienna wynika z drugiej), dlatego niektóre z nich w analizie PCA zdecydowano się usunać (były to bramki_stracone, bramki_strzelone,liczba_zwyciestw,liczba_porazek,liczba_remisow, liczba_meczy, bilans_bramek). Po usunięciu wymienionych zmiennych oraz stworzeniu nowej zmiennej bilans_meczy, objaśniana przez PCA1 i PCA2 wariancja spadła o niecały punkt procentowy.
+
+
+```{r}
+df$bilans_meczy <- df$liczba_zwyciestw - df$liczba_porazek
+```
+
+
+```{r}
+df <- df %>%
+  select(-c("X","bramki_stracone","bramki_strzelone","liczba_zwyciestw","liczba_porazek","liczba_remisow",
+            "liczba_meczy","bilans_bramek")) %>%
+  remove_rownames() %>%
+  column_to_rownames("nazwa_druzyny") 
+```
+
+
+
+```{r}
+df %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px')
+```
+
+
+## Test sferyczności Bartletta
+
+#### Test ten służy do oceny, czy istnieje statystycznie istotna rozbieżność między macierzą korelacji a macierzą jednostkową - innymi słowy, czy wszystkie współczynniki korelacji są równe 0. Przed rozpoczęciem analizy PCA, należy upewnić się, że w oryginalnych danych istnieje statystycznie istotna korelacja. (źródła: https://www.analysisinn.com/post/kmo-and-bartlett-s-test-of-sphericity/,
+https://easystats.github.io/performance/reference/check_factorstructure.html)
+
+#### Hipotezy:
+* H0: Macierze te nie różnią się w sposób statystycznie istotny
+* Ha: Macierze te różnią się w sposób statystycznie istotny
+
+```{r}
+bartlett.test(x = df %>% select_if(is.numeric), nrow(df))
+```
+
+#### P-value < 2.2e-16, należy zatem odrzucić hipotezę zerową, co pozwala na wykonanie analizy PCA
+
+## Analiza PCA
+
+### Skalowanie danych, eigenvalues oraz eigenvectors
+
+```{r}
+pca <- prcomp(x = df %>% select_if(is.numeric), scale.=TRUE)
+```
+
+### Eigenvalues - wartości własne
+
+
+
+#### Aby obliczyć  wartości własne, należy przyrównać wyznacznik macierzy |A-lambda| do 0, gdzie A to macierz kowariancji zeskalowanych danych. Z tej równości wyliczany jest parametr lambda, czyli eigenvalue. Wartości własnych (lambd) jest tyle, ile wynosi liczba zmiennych (źródło: https://www.geeksforgeeks.org/mathematical-approach-to-pca/). W zaprezentowanych danych, wartości własne są następujące:  
+
+
+```{r}
+sapply(pca$sdev, function(x) (x**2))
+```
+
+
+### Eigenvectors - wektory własne
+
+#### W celu obliczenia wektorów własnych przyrównuje się do siebie iloczyny A`*v` oraz Lambda`*v`, gdzie A to macierz kowariancji zeskalowanych danych, lambda to wcześniej pozyskane wartości własne, a v to wektor niewadomych zmiennych. Po rozpisaniu tego równania w formie macierzowej, powstają układy równań zawierające po lewej i prawej stronie niewiadome zmienne z wektora v. Z tych równań wylicza się wektory własne. Następnie wektory są porządkowane w macierz i następuje przemnożenie zeskalowanych danych przez tę macierz, czego wynikiem są elementy głównych składowych (PCA) (źródło: https://www.geeksforgeeks.org/mathematical-approach-to-pca/). 
+
+
+
+```{r}
+eigen_vectors <- as.data.frame(pca$rotation)
+```
+
+
+```{r}
+eigen_vectors
+```
+
+
+#### Suma kwadratów elementów wektorów wyznaczających poszczególne główne składowe musi się równać 1.
+
+```{r}
+print(paste("Suma kwadratów elementów wektora PCA1 wynosi:",sum(sapply(eigen_vectors$PC1, function(x) x**2))))
+print(paste("Suma kwadratów elementów wektora PCA2 wynosi:",sum(sapply(eigen_vectors$PC2, function(x) x**2))))
+print(paste("Suma kwadratów elementów wektora PCA3 wynosi:",sum(sapply(eigen_vectors$PC3, function(x) x**2))))
+print(paste("Suma kwadratów elementów wektora PCA4 wynosi:",sum(sapply(eigen_vectors$PC4, function(x) x**2))))
+```
+
+
+### Macierz PCA
+
+```{r}
+pca$x
+```
+
+
+### Wariancja
+
+#### PCA1 i PCA2 wyjaśniają ~97.94% wariancji
+
+```{r}
+summary(pca)
+```
+
+##### Ilustruje to również Scree plot
+
+```{r}
+fviz_eig(pca,addlabels = TRUE)
+```
+
+
+### Kontrybucja zmiennych
+
+#### Zaznaczona na wykresach linia referencyjna wskazuje na spodziewaną kontrybucję, gdyby wszystkie zmienne miały taki sam wpływ na dany wymiar (źródło: http://www.sthda.com/english/wiki/fviz-contrib-quick-visualization-of-row-column-contributions-r-software-and-data-mining)
+
+#### Dla PCA1 zmienne liczba_punktow oraz tytuly_ligowe są najważniejsze w kontrybucji do tego wymiaru, ponieważ przekraczają linie referencyjną
+
+```{r}
+fviz_contrib(pca,choice="var")
+```
+
+
+#### Dla PCA2, zmienne bilans_meczy oraz liczba_sezonow mają największy wpływ na ten wymiar, ponieważ przekraczają linie referencyjną
+
+```{r}
+fviz_contrib(pca,choice="var",axes=2)
+```
+
+
+### Wykresy PCA
+
+
+```{r,fig.width=8,fig.height=5}
+  fviz_pca_var(pca, 
+             repel = TRUE,
+             col.circle = "red",
+             col.var="blue")
+
+```
+
+```{r}
+fviz_pca_biplot(pca,label="var",repel = TRUE)
+```
+
+```{r,fig.width=15,fig.height=12}
+ggplot(data.frame(pca$x,sample=rownames(df)),aes(x=PC1,y=PC2)) + geom_point() + 
+geom_text_repel(aes(label=rownames(df)),box.padding = 0.01,
+                hjust=1.5,vjust=-2) +
+   xlim(-10, 4) + ylim (-2.5,2.25)
+```
+
+
+### Wnioski (na podstawie wykresów i eigenvectors)
+
+1. Zmienne liczba_sezonów, liczba_punktów są ze sobą pozytywnie skorelowane
+2. Pary zmiennych liczba_sezonów, tytuły ligowe oraz liczba punktów, tytuły ligowe są ze sobą pozytywnie skorelowane
+3. Zmienne liczba_sezonow, bilans_meczy są ze sobą nisko pozytywnie skorelowane
+4. Wszystkie wektory są podobnej długości, co wskazuje na podobną zmienność cech
+5. Zmienne liczba_punktow, tytuly_ligowe są wyraźnie bardziej (pozytywnie) skorelowane z PCA1 niż PCA2, w przypadku pozostałych zmiennych te korelacje wydają się byc podobne zarówno z PCA1 jak i PCA2
+6. Ze względu na to, że wszystkie elementy wektora PC1 są ujemne, kluby piłkarskie, które znajdują się po ujemnej stronie osi X, cechują się wysokimi wartościami uwzględnionych zmiennych. Są to zatem przede wszystkim kluby, które (w porównaniu do reszty klubów) rozegrały więcej sezonów, co wiąże się z wysokimi pozostałymi statystykami. Kluby, które jednocześnie znajdują się po negatywnej stronie osi X i pozytywnej stronie osi Y powinny być najbardziej zasłużone dla polskiej piłki nożnej, ponieważ ponadto posiadają więcej (w porównaniu z innymi klubami) tytułów ligowych oraz ich bilans meczy jest wyraźnie wyższy (w porównaniu z innymi klubami).
+7. Po dodatniej stronie osi X powinny znajdować się przede wszystkim kluby z relatywnie krótką historią w najwyższej klasie rozgrywkowej, które jednocześnie wykazują się ujemnym bilansem meczy (tzn. kluby te przegrały wyraźnie więcej meczy niż wygrały).
+
+
+
+
+
+
+
+
+
+
+
