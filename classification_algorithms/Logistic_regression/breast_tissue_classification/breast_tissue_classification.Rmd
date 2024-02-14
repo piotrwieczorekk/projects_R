@@ -1,0 +1,187 @@
+---
+title: 'Diagnosis of breast tissues (M = malignant, B = benign)'
+author: "Piotr Wieczorek"
+date: "2024-02-14"
+output: 
+  html_document: 
+    toc: true
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(missForest)
+library(naniar)
+library(janitor)
+library(MLmetrics)
+library(readxl)
+library(ggthemr)
+library(skimr)
+library(corrplot)
+library(car)
+library(coefplot)
+library(randomForest)
+```
+
+
+## Loading and cleaning the data
+
+```{r}
+df <- read.csv(file.choose())
+```
+
+
+```{r}
+df <- df %>%
+  select(-c("id","X")) %>%
+  mutate_if(is.character,as.factor)
+```
+
+
+### Inspecting dependent variable's balance
+
+```{r}
+janitor::tabyl(df,diagnosis)
+```
+
+
+```{r}
+df %>%
+  select_if(is.numeric) %>%
+  colnames()
+```
+
+### Inspecting highly correlated variables
+
+
+```{r,fig.width=12,fig.height=15}
+corrplot(df %>% select_if(is.numeric) %>% cor(),method = "number")
+```
+
+
+### Unselecting variables
+
+
+#### These variables were either highly correlated with other variables or exhibited extremely high VIF values after creating the model
+
+```{r}
+df <- df %>%
+  select(-c("perimeter_mean",
+            "area_mean",
+            "radius_worst","perimeter_worst",
+            "perimeter_se",
+            "radius_se",
+            "compactness_se",
+            "compactness_mean",
+            "compactness_worst",
+            "concavity_mean",
+            "area_worst",
+            "radius_mean",
+            "smoothness_worst",
+            "concave.points_se",
+            "texture_worst",
+            "fractal_dimension_se",
+            "symmetry_worst",
+            "fractal_dimension_worst",
+            "symmetry_se",
+            "concave.points_mean",
+            "smoothness_mean",
+            "symmetry_mean"))
+```
+
+
+
+### Correlation plot after excluding redundant variables
+
+
+```{r,fig.width=12,fig.height=15}
+corrplot(df %>% select_if(is.numeric) %>% cor(),method = "number")
+```
+
+
+## Logistic regression
+
+### Data partition
+
+```{r}
+set.seed(123)
+
+data_partition <- caret::createDataPartition(df$diagnosis,p=0.7,list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(nrow(train_set))
+print(nrow(test_set))
+
+print(nrow(train_set)/nrow(df))
+```
+
+### Model formula
+
+
+```{r}
+log_mod <- glm(formula = diagnosis ~., data = train_set, family = "binomial")
+```
+
+
+
+### Model summary
+
+
+
+```{r}
+print(summary(log_mod))
+```
+
+
+
+### Prediction
+
+
+
+```{r}
+test_pred <- predict(log_mod,test_set,type="response")
+```
+
+
+
+```{r}
+test_pred <- ifelse(test_pred >=0.5, "M", "B")
+```
+
+
+### Confusion matrix
+
+
+```{r}
+confusionMatrix(as.factor(test_pred),reference = test_set$diagnosis,positive = "M")
+```
+
+
+### Confusion matrix summary
+
+<h4>1. Accuracy score = ~ 0.96 (which is significantly higher than ~0.63 No Information Rate)</h4>
+<h4>2. Sensitivity = 0.9841 (98.41% of the positive class was correctly classified by the model)</h4>
+<h4>3. Specificity = 0.9439 (94.39% of the negative class was correctly classified by the model)</h4>
+<h4>4. Pos Pred Value = 0.9118 (out of all the observations that were classified by the model as positive, 91.18% of them were positive)</h4>
+<h4>5. Neg Pred Value = 0.9902 (out of all observations that were classified by the model as negative, 99.02% of them were negative)</h4>
+<h4>6. Prevalence = 0.3706 (37.06% observations were positive)</h4>
+
+
+
+
+
+
+
+
+
+
