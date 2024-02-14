@@ -1,6 +1,6 @@
 ---
 title: "Najwyższa polska liga piłkarska (wszech czasów) - analiza PCA"
-author: "Piotr Wieczorek (174302), Adrian Kowalczyk (188359)"
+author: "Piotr Wieczorek"
 date: "2024-02-02"
 output: 
   html_document: 
