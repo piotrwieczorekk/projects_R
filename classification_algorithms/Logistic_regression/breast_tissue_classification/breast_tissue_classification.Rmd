@@ -1,5 +1,5 @@
 ---
-title: 'Diagnosis of breast tissues (M = malignant, B = benign)'
+title: 'Diagnosis of breast tissues classification (M = malignant, B = benign)'
 author: "Piotr Wieczorek"
 date: "2024-02-14"
 output: 
