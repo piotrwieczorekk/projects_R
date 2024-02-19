@@ -1,0 +1,244 @@
+---
+title: "Credit Category classification"
+author: "Piotr Wieczorek"
+date: "2024-02-19"
+output: 
+  html_document: 
+    theme: united
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Goal of the project
+
+#### This project aims to classify clients based on a set of attributes as associated good or bad credit risks.
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(stats)
+library(MLmetrics)
+library(sjPlot)
+library(rcompanion)
+library(kableExtra)
+library(lmtest)
+library(janitor)
+library(ggthemr)
+library(gridExtra)
+library(modelsummary)
+```
+
+
+## Reading and cleaning the data
+
+```{r}
+df <- read.csv("bank.csv")
+```
+
+
+```{r}
+head(df) %>%
+  kable(align = "c") %>%
+    kable_styling(position = "center") %>%
+    scroll_box(width = "100%")
+```
+```{r}
+df <- df %>%
+  select(-c("X")) %>%
+  mutate(across(where(is.character),as.factor))
+```
+
+```{r}
+df <- df %>%
+  mutate(across(c("residence_since","existing_credits"),as.factor))
+```
+
+
+## Exploratory analysis
+
+#### The plot below pictures share of independent variables' categories by the risk class
+
+```{r,fig.width=14,fig.height=8}
+ggthemr("fresh")
+
+df %>%
+  gather(c("checking_status","credit_history","purpose","savings_status",
+           "employment","personal_status","other_parties","property_magnitude",
+           "other_payment_plans","housing","job","own_telephone","foreign_worker",
+           "existing_credits","residence_since"),
+            value="val",key="key") %>%
+  count(key,val,class) %>%
+  ggplot(aes(x=val,y=n,fill=class)) + 
+  geom_bar(stat="identity",position = position_fill()) + 
+  facet_wrap(~key,scales="free") + 
+  #theme_bw() + 
+  coord_flip() +
+  labs(x="",y="",title = "Independent Categorical Variables by Class")
+
+```
+
+## Modeling
+
+### Data partition
+
+```{r}
+set.seed(321)
+
+data_partition <- caret::createDataPartition(df$class,p=0.7,list=FALSE)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+```
+
+
+### First model 
+
+```{r}
+mod1 <- glm(formula = class ~., data = train_set, family = "binomial")
+```
+
+```{r}
+tab_model(mod1,show.ci = 0.95,p.style="stars",p.threshold = c(0.1, 0.05, 0.01),show.aic = TRUE,
+          show.loglik = TRUE)
+```
+
+
+
+### Second model 
+
+```{r}
+mod2 <- glm(formula = class ~. -job -existing_credits -num_dependents -property_magnitude -housing -employment, data = train_set, family = "binomial")
+```
+
+```{r}
+tab_model(mod2,show.ci = 0.95,p.style="stars",show.aic = TRUE,
+          show.loglik = TRUE,p.threshold = c(0.1,0.05,0.01))
+```
+
+
+### Models comparison - Likelihood ratio test
+
+
+```{r}
+lrtest(mod1,mod2)
+```
+
+
+
+#### Conclusion: There is no significant difference between these models, so it's better to choose the least complicated one (with less variables)
+
+
+
+### Coefficient plot
+
+```{r}
+modelplot(mod2)
+```
+
+
+### Variables' effect on the prediction
+
+```{r,fig.width=13,fig.height=8}
+grid.arrange(
+  plot_model(mod2,
+  type = "pred",
+  terms = c("checking_status"),
+  ci.lvl = NA # remove confidence bands
+) +
+  labs(y = "Prob(good class)"),
+
+  plot_model(mod2,
+             type="pred",
+             terms=c("installment_commitment"),
+             ci.lvl=NA)+
+  labs(y = "Prob(good class)"),
+
+ plot_model(mod2,
+             type="pred",
+             terms=c("foreign_worker"),
+             ci.lvl=NA)+
+  labs(y = "Prob(good class)"),
+
+plot_model(mod2,
+             type="pred",
+             terms=c("other_parties"),
+             ci.lvl=NA)+
+  labs(y = "Prob(good class)"),
+
+plot_model(mod2,
+             type="pred",
+             terms=c("duration"),
+             ci.lvl=NA)+
+  labs(y = "Prob(good class)"),
+
+plot_model(mod2,
+             type="pred",
+             terms=c("age"),
+             ci.lvl=NA)+
+  labs(y = "Prob(good class)"),
+
+plot_model(mod2,
+             type="pred",
+             terms=c("credit_amount"),
+             ci.lvl=NA)+
+  labs(y = "Prob(good class)")
+  
+)
+
+```
+
+#### Conclusion:
+1. As age increases, the more likely it is to be classified as the "good" risk class
+2. As credit amount increases, the less likely it is to be classified as the "good" risk class
+3. As duration increases, the less likely it is to be classified as the "good" risk class
+4. As the install commitment increases, the less likely it is to be classified as the "good" risk class
+5. As the credit amount increases, the less likely it is to be classified as the "good" risk class
+6. Foreign workers are less likely to be classified as the "good" risk class
+7. Guarantors are more likely to be classified as the "good" risk class
+
+
+### Prediction
+
+
+```{r}
+test_pred <- predict(mod2,test_set,type="response")
+```
+
+```{r}
+test_pred <- as.factor(ifelse(test_pred >=0.5,"good","bad"))
+```
+
+
+### Confusion matrix
+
+
+```{r}
+confusionMatrix(test_pred, test_set$class,positive = "good")
+```
+
+#### Conclusion:
+1. Accuracy = 0.7576 - the model predicted ~76% of the observations correctly
+2. Accuracy > No Information Rate indicates that the model is valid
+3. Sensitivity = 0.8333 - the model predicted ~83% of the positive class observations correctly
+4. Specificity = 0.5778 - the model predicted ~58% of the negative class observations correctly
+5. Pos Pred Value = 0.8216 - among all predicted observations as positive, ~83% of them were in fact positive
+6. Neg Pred Value = 0.5977 - among all predicted observations as negative, ~60% of them were in fact negative
+7. Prevalence = 0.7 - 70% of all observations were positive
+
+
+
+
+
+
+
+
