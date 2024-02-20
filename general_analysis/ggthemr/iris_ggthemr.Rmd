@@ -1,0 +1,83 @@
+---
+title: "Iris - ggthemr and DT package"
+author: "Piotr Wieczorek"
+date: "2024-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+
+```{r}
+library(DT)
+library(tidyverse)
+library(plotly)
+library(ggthemes)
+library(ggplot2)
+library(ggthemr)
+library(scales)
+```
+
+
+```{r}
+df <- iris
+```
+
+
+```{r}
+datatable(df,editable = 'cell')
+```
+
+
+
+```{r,fig.width=10,fig.height=6,fig.align="center"}
+ggthemr("grass",text_size = 12)
+
+ggplotly(df %>%
+  gather(c(1:4),key="key",value="val") %>%
+  ggplot(aes(x=Species,y=val,fill=Species,text=paste("Species:",Species,"\nValue:",val))) +
+  geom_boxplot(outlier.shape=NA) + 
+  geom_jitter(shape=21,colour="black",position=position_jitter(width=0.1),show.legend = F) + 
+  facet_wrap(~key,scales="free") +
+  labs(y="") + 
+    theme(panel.spacing = unit(3, "lines")),
+  tooltip = "text")
+```
+
+
+```{r,fig.width=10,fig.height=6,fig.align="center"}
+ggthemr("grass",text_size = 12)
+
+ggplotly(df %>%
+  gather(c(1:4),key="key",value="val") %>%
+  ggplot(aes(x=val,fill=Species)) +
+  geom_density() + 
+  facet_wrap(~key,scales="free") +
+  labs(y="")+ 
+    theme(panel.spacing = unit(3, "lines")))
+```
+
+
+
+
+```{r,fig.width=8,fig.height=6,fig.align="center"}
+ggplotly(
+df %>%
+  gather(c("Sepal.Width","Petal.Length","Petal.Width"),value="val",key="key") %>%
+  ggplot(aes(y=Sepal.Length,x=val,text=paste(key,":",val,"\nSepal.Length:",Sepal.Length))) + 
+  geom_point() + 
+  facet_wrap(~key,scales="free_x") + 
+  labs(x="",scales="free")+ 
+    theme(panel.spacing = unit(3, "lines")),
+tooltip = "text")
+```
+
+
+
+
