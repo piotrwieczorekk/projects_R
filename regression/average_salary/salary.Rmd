@@ -1,0 +1,523 @@
+---
+title: "Predicting Average Salary"
+author: "Piotr Wieczorek"
+date: "2024-02-21"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=F,message=F)
+```
+
+
+```{r}
+rm(list=ls())
+```
+
+
+## Goal of the project
+
+##### This project aims to create a model to predict average salary based on following attributes:
+1. Description (company field)
+2. Ratings
+3. Highly_rated_for
+4. Critically_rated_for
+5. Total_reviews
+6. Interviews_taken
+7. Total_jobs_available
+8. Total_benefits
+
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(ggthemr)
+library(DT)
+library(naniar)
+library(missForest)
+library(janitor)
+library(gridExtra)
+library(datawizard)
+library(car)
+library(lmtest)
+library(MLmetrics)
+library(kableExtra)
+library(randomForest)
+library(fastDummies)
+```
+
+
+## Cleaning and exploring the data
+
+
+```{r}
+df <- read.csv("companies.csv")
+```
+
+
+```{r}
+df %>%
+  head()%>%
+  kable(align = "c") %>%
+    kable_styling(position = "center") %>%
+    scroll_box(width = "100%",height="100%")
+```
+
+
+### Changing blank values to a category ("No critical rating")
+
+```{r}
+df$Critically_rated_for = ifelse(df$Critically_rated_for == "", "No critical rating",df$Critically_rated_for)
+```
+
+
+### Fixing numerical columns
+
+##### Numerical columns were read as character columns because of the "k" symbol which stands for "thousand" so the function below changes this notation by multiplying the value by a thousand whenever it occurs
+
+```{r}
+df[, c(6:10)] <- sapply(df[, c(6:10)], function(x) {
+  ifelse(
+    str_detect(x, "k"), 
+    as.numeric(str_replace(x, "k", "")) * 1000, 
+    as.numeric(x)
+  )
+})
+```
+
+
+### Changing character columns to factor columns
+
+
+```{r}
+df <- df %>%
+  mutate_if(is.character,as.factor)
+```
+
+
+
+### Fixing the "Highly_rated_for" column
+
+##### The function below selects only the first category of the description (it returns the first part of the string before the first occurence of the comma symbol)
+
+```{r}
+df$Highly_rated_for <- sapply(df$Highly_rated_for, function(x) {
+  ifelse(str_detect(string=x,pattern = ","),
+         str_split_i(x,pattern=",",i=1),
+         as.character(x)
+  )
+})
+```
+
+### Fixing the "Critically_rated_for" column
+
+##### The function below does the same thing as for the "Highly_rated_for" column
+
+```{r}
+df$Critically_rated_for <- sapply(df$Critically_rated_for, function(x) {
+  ifelse(str_detect(string=x,pattern = ","),
+         str_split_i(x,pattern=",",i=1),
+         as.character(x)
+  )
+})
+```
+
+
+```{r}
+df$Critically_rated_for <- as.factor(df$Critically_rated_for)
+```
+
+
+```{r}
+df$Description <- trimws(str_split_i(df$Description,"\\|", i=1))
+```
+
+
+
+```{r}
+df$Description <- as.factor(df$Description)
+```
+
+
+### Replacing blank values with NA
+
+```{r}
+df[df==""] <- NA
+```
+
+
+### NA values report
+
+
+```{r}
+naniar::miss_var_summary(df) %>%
+  filter(n_miss>0)
+```
+
+### Replacing NA with 0 in the "Total_jobs_available column
+
+
+```{r}
+df$Total_jobs_available <- as.numeric(str_replace_all(str_replace_na(df$Total_jobs_available),"NA","0"))
+```
+
+
+```{r}
+naniar::miss_var_summary(df) %>%
+  filter(n_miss>0)
+```
+
+
+```{r}
+df$Highly_rated_for <- as.factor(df$Highly_rated_for)
+```
+
+
+### Unselecting the "Company_name" column
+
+##### This column was dropped because it has too many categories to be included in the model
+
+```{r}
+df <- df %>%
+  select(-c("Company_name"))
+```
+
+
+### Preparing the "Description" column for modeling purposes
+
+##### This variable has a lot of categories so it was decided to choose only first ten categories (in terms of their share in the variable) and replace all other categories with "Other" in order to avoid near zero variables in the regression model
+
+```{r}
+DT::datatable(as.data.frame(janitor::tabyl(df,Description)) %>%
+  arrange(desc(n)),editable = "cell")
+```
+
+```{r}
+df$Description <- case_when(
+    df$Description %in% c("IT Services & Consulting", "Engineering & Construction", 
+                       "Auto Components", "Industrial Machinery", "Pharma",
+                       "Education & Training", "Healthcare", "Financial Services",
+                       "Internet", "Software Product") ~ df$Description,
+    TRUE ~ "Other")
+```
+
+
+```{r}
+df$Description <- as.factor(df$Description)
+```
+
+
+```{r}
+naniar::miss_var_summary(df) %>%
+  filter(n_miss >0)
+```
+
+
+
+## Modeling part
+
+### Data partition
+
+```{r}
+set.seed(321)
+
+train_percentage <- 0.7
+
+
+num_rows <- nrow(df)
+
+
+train_indices <- sample(seq_len(num_rows), size = round(train_percentage * num_rows))
+
+# Create the training set
+train_set <- df[train_indices, ]
+
+
+test_set <- df[-train_indices, ]
+
+```
+
+
+```{r}
+naniar::miss_var_summary(train_set) %>%
+  filter(n_miss > 0)
+```
+
+```{r}
+naniar::miss_var_summary(test_set) %>%
+  filter(n_miss > 0)
+```
+
+
+
+### Dropping remaining NA values in both train and test set
+
+
+```{r}
+train_set <- train_set %>%
+  drop_na()
+
+test_set <- test_set %>%
+  drop_na()
+```
+
+
+### Fixing the "Avg_salary" column
+
+##### Apparently there was a mistake in the dataset because some observations exhibit values of "Avg_salary" such as 5,3,10 etc. so it was decided to exclude all observations where the "Avg_salary" is below 500 from both train and test set
+
+
+##### Visualizing "Avg_salary" before the changes
+
+```{r}
+grid.arrange(
+  train_set %>%
+    ggplot(aes(x=Avg_salary)) + 
+    geom_density() + 
+    theme_classic(),
+  
+train_set %>%
+  ggplot(aes(x=Avg_salary)) + 
+  geom_boxplot() + theme_classic()
+)
+```
+
+
+```{r}
+train_set <- train_set %>%
+  filter(Avg_salary > 500)
+
+test_set <- test_set %>%
+  filter(Avg_salary > 500)
+```
+
+
+
+```{r}
+quantile(train_set$Avg_salary,c(seq(0,1,by=0.05)))
+```
+
+##### It was also decided to exclude the right-tailed outliers from the data set for this variable by excluding all observations where "Avg_salary" is higher than 8400 (which was the 95th percentile in the train set) from both train and test set
+
+```{r}
+train_set <- train_set %>%
+  filter(Avg_salary <= 8400)
+
+
+test_set <- test_set %>%
+  filter(Avg_salary <= 8400)
+```
+
+
+
+##### Visualizing "Avg_salary" after the changes
+
+
+```{r}
+grid.arrange(
+  train_set %>%
+    ggplot(aes(x=Avg_salary)) + 
+    geom_density() + 
+    theme_classic(),
+  
+
+ train_set %>%
+    ggplot(aes(x=Avg_salary)) + 
+    geom_boxplot() + 
+    theme_classic()
+)
+```
+
+
+### Relationship between the dependent and independent variables
+
+##### Correlation betwen the dependent and independent variables is positive for each pair
+
+```{r}
+train_set %>%
+  gather(c("Total_reviews","Ratings","Interviews_taken","Total_jobs_available","Total_benefits"),key="key",value="val") %>%
+  select(c("Avg_salary","key","val")) %>%
+  ggplot(aes(x=val,y=Avg_salary ,fill=Avg_salary )) + 
+  geom_point(shape=21) + 
+  geom_smooth(method="lm")+ 
+  facet_wrap(~key,scales="free")
+```
+
+```{r}
+cor(train_set %>% select_if(is.numeric))
+```
+
+
+### Linear regression
+
+
+#### First linear regression model
+
+
+```{r}
+mod1 <- lm(Avg_salary  ~., data=train_set)
+```
+
+
+
+```{r}
+summary(mod1)
+```
+
+
+#### Second linear regression model
+
+
+```{r}
+mod2 <- lm(formula = Avg_salary ~. -Critically_rated_for, data=train_set)
+```
+
+
+```{r}
+summary(mod2)
+```
+
+
+##### The second model has fewer variables and R^2 dropped from 0.7921 to 0.79 indicating that dropped variables were unnecessary
+
+
+#### Second linear regression model metrics
+
+##### MAE = 393 (linear regression model's predictions were wrong by 393 on average)
+##### MAPE = 0.2887 (linear regression model's predictions were wrong by ~29% on average)
+
+```{r}
+print(paste("MAE:",MLmetrics::MAE(y_pred = predict(mod2,test_set),y_true = test_set$Avg_salary)))
+
+print(paste("MAPE:",MLmetrics::MAPE(y_pred=predict(mod2,test_set),y_true=test_set$Avg_salary)))
+```
+
+#### Second linear regression model diagnostics
+
+
+```{r}
+df_diag <- data.frame(residuals = mod2$residuals,
+           standarized_residuals = scale(mod2$residuals),
+           fitted = mod2$fitted.values)
+
+grid.arrange(
+  df_diag %>%
+    ggplot(aes(x=fitted,y=residuals)) + 
+    geom_point() + 
+    geom_smooth(method="lm",se=F)+
+    theme_classic(),
+  
+  df_diag %>%
+    ggplot(aes(x=fitted,y=standarized_residuals)) + 
+    geom_point() + 
+    geom_smooth(method="lm",se=F) +
+    theme_classic(),
+  
+  df_diag %>%
+    ggplot(aes(x=residuals)) +
+    geom_density()
+  
+)
+
+```
+
+
+##### There is no trend between predicted variables and both non-standarized and standarized residuals but the residuals are not normally distributed
+
+
+### Random forest regression
+
+
+#### First random forest model
+
+
+```{r}
+train_dummies <-fastDummies::dummy_cols(train_set[,c(1,3,4)], remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+
+train_dummies <- cbind(train_dummies,train_set[,-c(1,3,4)])
+
+test_dummies <- fastDummies::dummy_cols(test_set[,c(1,3,4)],remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+
+test_dummies <- cbind(test_dummies,test_set[,-c(1,3,4)])
+```
+
+```{r}
+train_dummies <- janitor::clean_names(train_dummies)
+test_dummies <- janitor::clean_names(test_dummies)
+```
+
+
+
+```{r}
+rf_mod1 <- randomForest::randomForest(avg_salary ~.,ntree=100,importance=TRUE,data=train_dummies,
+                                      mtry = floor(sqrt(ncol(train_dummies))))
+```
+
+```{r}
+rf_mod1
+```
+
+```{r}
+plot(rf_mod1)
+```
+
+
+```{r,fig.height=8}
+varImpPlot(rf_mod1,type=1)
+```
+
+##### Some variables have negative or close to 0 %IncMSE (interpretation is as follows: how would MSE increase if we dropped a variable), so the model might be reduced 
+
+#### Model metrics
+
+
+
+```{r}
+print(paste("MAE:",MLmetrics::MAE(y_pred = predict(rf_mod1,test_dummies),y_true = test_dummies$avg_salary)))
+
+print(paste("MAPE:",MLmetrics::MAPE(y_pred=predict(rf_mod1,test_dummies),y_true=test_dummies$avg_salary)))
+```
+
+#### Second random forest model
+
+
+```{r}
+rf_mod2 <- randomForest::randomForest(avg_salary ~. -critically_rated_for_work_life_balance -description_healthcare -critically_rated_for_work_satisfaction -critically_rated_for_job_security -highly_rated_for_salary_benefits,ntree=100,importance=TRUE,data=train_dummies,
+                                      mtry = floor(sqrt(ncol(train_dummies))))
+```
+
+```{r}
+rf_mod2
+```
+```{r,fig.height=8}
+varImpPlot(rf_mod2,type=1)
+```
+
+#### Model metrics
+
+```{r}
+print(paste("MAE:",MLmetrics::MAE(y_pred = predict(rf_mod2,test_dummies),y_true = test_dummies$avg_salary)))
+
+print(paste("MAPE:",MLmetrics::MAPE(y_pred=predict(rf_mod2,test_dummies),y_true=test_dummies$avg_salary)))
+```
+
+### Comparing linear regression metrics to random forest metrics (MAE, MAPE)
+
+
+```{r}
+data.frame("Model"=c("Linear regression","Random Forest"),
+              "MAE" = c("393.15","336.87"),
+              "MAPE" = c("0.2887","0.2384")) %>%
+  mutate_at(c(2,3),as.numeric)
+```
+
+
+
+
+
