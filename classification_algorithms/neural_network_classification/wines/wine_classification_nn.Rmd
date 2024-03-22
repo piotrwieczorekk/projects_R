@@ -1,0 +1,169 @@
+---
+title: "Wine Classification - Neural Network"
+author: "Piotr Wieczorek"
+date: "2024-03-22"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=F,message=F)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(neuralnet)
+library(caret)
+library(NeuralNetTools)
+library(janitor)
+library(kableExtra)
+```
+
+
+## Reading, cleaning and preparing the data
+
+```{r}
+df <- read.csv("wine_data2.csv")
+```
+
+
+### Unselecting columns
+
+
+```{r}
+df <- df %>%
+  select(-c("X","Unnamed._0")) %>%
+  janitor::clean_names() %>%
+  mutate_if(is.character,as.factor)
+```
+
+
+### Scaling numerical data
+
+
+```{r}
+df[,c(1:12)] <- sapply(df[,c(1:12)], function(x) scale(x))
+```
+
+
+
+```{r}
+levels(df$type)
+```
+
+
+
+### Adding boolean columns for each wine type
+
+
+
+```{r}
+df$red <- df$type == "red"
+df$white <- df$type == "white"
+```
+
+```{r}
+df %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px',width="100%")
+```
+
+
+
+## Modeling
+
+
+
+### Data partition
+
+
+
+```{r}
+data_partition <- caret::createDataPartition(df$type,p=0.65,list=F)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(nrow(train_set))
+print(nrow(test_set))
+```
+
+
+### Sigmoid activation function formula
+
+
+```{r}
+sigmoid <- function(x) {1/(1+exp(-x))}
+```
+
+
+
+### Neural network formula
+
+
+
+```{r}
+nn <- neuralnet(red+white ~. -type,
+                hidden = c(3,2,3),
+                train_set,
+                linear.output = FALSE,
+                act.fct = sigmoid,
+                learningrate=0.01)
+```
+
+
+
+### Neural network plot
+
+
+```{r,fig.width=12,fig.height=6}
+plot(nn,rep="best",x.entry = 0.25,radius = 0.15,arrow.length = 0.2)
+```
+
+
+
+
+### Prediction
+
+
+```{r}
+pred <- predict(nn, test_set)
+table(test_set$type, apply(pred, 1, which.max))
+```
+
+
+```{r}
+nn_pred <- apply(compute(nn,test_set[1:12])$net.result,1,which.max)
+```
+
+```{r}
+head(as.factor(nn_pred))
+```
+```{r}
+levels(test_set$type)
+```
+```{r}
+idx <- c("red","white")[nn_pred]
+```
+
+
+
+
+### Confusion matrix for the prediction
+
+
+
+```{r}
+caret::confusionMatrix(data=as.factor(idx),reference = test_set$type)
+```
+
+
