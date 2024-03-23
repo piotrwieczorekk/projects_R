@@ -1,0 +1,162 @@
+---
+title: "Comparing YEKINDAR's Rating 2.0 across different maps"
+author: "Piotr Wieczorek"
+date: "2024-03-23"
+output: 
+  html_document: 
+    toc: true
+    theme: sandstone
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=F,message=F)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+
+```{r}
+library(tidyverse)
+library(stats)
+library(readxl)
+library(ggthemr)
+library(rstatix)
+library(ggstatsplot)
+library(kableExtra)
+```
+
+## Reading the data
+
+```{r}
+df <- read_excel("yekindar_stats.xlsx",sheet = "Arkusz2")
+```
+
+
+```{r}
+df %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px',width="100%")
+```
+
+### Exploratory analysis
+
+
+#### Density plots
+
+
+```{r,fig.width=10,fig.height=6}
+ggthemr(palette="fresh")
+
+df %>%
+  gather(c(2:6),key="key",value="val") %>%
+  ggplot(aes(x=val)) + 
+  geom_density() + 
+  facet_wrap(~key,scales="free") + 
+  labs(x="",title="Rating 2.0 Density Functions by Map")
+```
+
+
+#### Box plots
+
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  select(-c(1)) %>%
+  pivot_longer(cols=1:5) %>%
+  ggplot(aes(x=name,y=value)) + 
+  geom_boxplot() + 
+  labs(x="Map",y="Rating 2.0",title="Rating 2.0 by Map")
+```
+
+### Normality test
+
+
+```{r}
+df_normality <- data.frame()
+for (i in c("inferno", "mirage", "ancient", "overpass",
+    "vertigo")) {
+    shap_test = shapiro.test(df[[i]])
+    shap_test_p = round(shap_test$p.value,4)
+    variable_name = i
+    output = c(shap_test_p, variable_name)
+    df_normality = rbind(df_normality, output)
+}
+
+colnames(df_normality) <- c("shapiro_p-value", "map")
+```
+
+
+```{r}
+df_normality %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='200px',width="100%")
+```
+
+
+#### Rating 2.0 on ancient does not come from normal distribution - therefore an non-parametric test should be applied
+
+
+### Homoscedascity test
+
+
+
+```{r}
+df %>%
+  select(-c(1)) %>%
+  pivot_longer(cols=1:5) %>%
+  levene_test(value~name)
+```
+
+
+
+#### At p-value = 0.68 the null hypothesis should not be rejected and it should be claimed that the variances are equal (but because not all groups come from normal distribution, kruskal-wallis test will be applied)
+
+
+
+```{r}
+df_pivot <- df %>%
+  select(-c(1)) %>%
+  pivot_longer(cols=1:5) %>%
+  rename("map" = "name") %>%
+  rename("rating" = "value")
+```
+
+
+```{r}
+df_pivot %>%
+  kable(align = "c") %>%
+  kable_styling(position="center") %>%
+  scroll_box(height='500px',width="100%")
+```
+
+
+```{r}
+df_pivot <- df_pivot %>%
+  mutate(map = as.factor(map))
+```
+
+
+
+## Kruskal Wallis test
+
+
+```{r}
+kruskal_wallis_test <- kruskal.test(formula = rating ~ map, data = df_pivot)
+```
+
+
+```{r}
+kruskal_wallis_test
+```
+
+
+#### At p-value = 0.71, H0 should be accepted and it should be concluded that there are no differences between medians across different groups (the medians are the same)
+
+
+
