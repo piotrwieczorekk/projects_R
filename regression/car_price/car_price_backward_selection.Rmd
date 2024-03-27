@@ -1,0 +1,140 @@
+---
+title: "Car Price - Linear Regression with Backward Selection"
+author: "Piotr Wieczorek"
+date: "2024-03-27"
+output: 
+  html_document: 
+    toc: true
+    theme: yeti
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=F,message=F)
+```
+
+```{r}
+rm(list=ls())
+```
+
+## Libraries
+
+```{r}
+library(caret)
+library(tidyverse)
+library(naniar)
+library(janitor)
+library(olsrr)
+library(gridExtra)
+```
+
+
+
+## Loading and cleaning the data set
+
+
+```{r}
+df<-read.csv("CarPrice_Assignment.csv")
+```
+
+
+### Changing data types
+
+```{r}
+df <- df %>%
+  mutate_at(c("symboling","fueltype","aspiration","doornumber","carbody","drivewheel","enginelocation","enginetype","cylindernumber","fuelsystem"),as.factor) %>%
+  select(-c("car_ID"))
+```
+
+
+
+### Extracting brand name form CarName column
+
+
+
+
+```{r}
+df$CarName <- sapply(df$CarName, function(x) strsplit(x," ")[[1]][1])
+```
+
+
+```{r}
+df <- df %>%
+  mutate(CarName = as.factor(CarName))
+```
+
+
+
+### Factor variables' summary
+
+
+```{r}
+df %>%
+  select_if(is.factor) %>%
+  summary()
+```
+
+
+### Collapsing factors to introduce more variance to dummy variables in the model
+
+
+```{r}
+df <- df %>%
+  select(-c("enginelocation")) %>%
+  filter(symboling != "-2") %>%
+  mutate(carbody = fct_collapse(carbody,
+                                "convertible_or_hardtop" = c("convertible","hardtop")),
+         cylindernumber = fct_collapse(cylindernumber,
+                                       "other" = c("eight","three","twelve","two")),
+         fuelsystem = fct_collapse(fuelsystem,
+                                   "other" = c("4bbl","mfi","spdi","spfi","idi")),
+         enginetype = fct_collapse(enginetype,
+         "other" = c("rotor","dohcv")),
+         CarName = fct_collapse(CarName,
+                                "volkswagen" = c("volkswagen","vw","vokswagen"),
+                                "toyota" = c("toyota","toyouta"),
+                                "porsche" = c("porsche","porcshce"),
+                                "other" = c("dodge","bmw","buick","audi",
+                                            "plymouth","saab","isuzu", "porsche",
+                                            "alfa-romero","chevrolet",
+                                            "jaguar","maxda","renault","mercury",
+                                            "Nissan","porcshce")))
+    
+```
+
+
+
+```{r}
+grid.arrange(
+  
+  df %>%
+  ggplot(aes(x=price)) + 
+  geom_density()  + labs(title ="Price"),
+  
+  df %>%
+    ggplot(aes(x=log(price))) + 
+    geom_density() + 
+    labs(title="Log of Price")
+  
+)
+
+```
+
+
+
+## Backward selection - linear regression model
+
+
+```{r}
+mod <- olsrr::ols_step_backward_p(model = lm(price~.,data=df),prem = 0.1,progress = TRUE)
+```
+
+
+
+### Removed variables
+
+
+```{r}
+mod$model
+```
+
+
