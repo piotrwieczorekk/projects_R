@@ -157,8 +157,10 @@ unemp_10_2023
 ### Map plot picturing unemployment rate within polish territory administrative division
 
 ```{r,fig.width=12,fig.height=8}
-ggplot(unemp_10_2023) +
+ggplot(unemp_10_2023,aes(label=unemp_rate)) +
   geom_sf(aes(fill = unemp_rate)) +
+  geom_sf_label(fun.geometry = sf::st_centroid,
+                fill="white",size=8) +
   scale_fill_gradient(name = "Unemployment Rate (%)", low = "#CDBABA", high = "#BC353A") +
   labs(title = "Unemployment Rate (%) in Polish Voivodeships") +
   theme_minimal() + 
