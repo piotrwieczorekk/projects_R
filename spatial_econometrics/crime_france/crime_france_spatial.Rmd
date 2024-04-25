@@ -1,0 +1,248 @@
+---
+title: "Population per Crime against persons in 1830s France - Spatial Model"
+author: "Piotr Wieczorek"
+date: "2024-04-24"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r}
+rm(list=ls())
+```
+
+
+```{r}
+options(scipen = 7)
+```
+
+
+### About the data set
+
+The "Guerry" data set is a "Classic social science foundational study by Andre-Michel Guerry on crime, suicide, literacy and other “moral statistics” in 1830s France" (source: https://geodacenter.github.io/data-and-lab/Guerry/)
+
+### Libraries
+
+```{r}
+library(spatialreg)
+library(tidyverse)
+library(sfdep)
+library(spdep)
+library(scales)
+library(viridis)
+library(olsrr)
+library(png)
+library(ggpubr)
+```
+
+
+```{r}
+class(guerry)
+```
+
+### Loading the dataset
+
+```{r}
+data <- guerry
+```
+
+
+
+```{r}
+data
+```
+
+### Seeking neighbors
+
+##### The neighbors are defined by contiguity. It means, that 2 units are neighbors only if they share a common side (in this case: a border)
+
+
+```{r}
+nb <- st_contiguity(guerry)
+```
+
+```{r}
+nb
+```
+
+```{r}
+attributes(nb)
+```
+
+```{r}
+nb[1:3] #first observation has neighbors with observation 36,37,67,69 and so on..
+```
+
+### Compute spatial weights (row-standarized)
+
+##### Row-standarization means that each element in the weight matrix gets divided by the sum within each row
+
+```{r}
+wt <- st_weights(nb) #spatial weights (row standardized)
+```
+
+```{r}
+wt
+```
+
+### Spatial lag
+
+##### Spatial lag is computed as sum of multiplication of each neighbor row-standarized weight and its value for the variable of interest.
+
+```{r}
+x <- guerry$crime_pers
+```
+
+```{r}
+st_lag(x,nb,wt)
+```
+##### For example, let's take a look on the spatial lag for the first observation in the data set:
+
+```{r}
+ij <- nb[[1]]
+wij <- wt[[1]]
+xij <- x[ij]
+```
+
+
+```{r}
+xij
+```
+
+```{r}
+sum(xij*wij)
+```
+
+#### Creating a data frame with neighbors, weights and spatial lag values
+
+
+```{r}
+crime_lags <- data %>%
+  transmute(nb=st_contiguity(geometry),
+            wt = st_weights(nb),
+            crime_lag = st_lag(crime_pers,nb,wt))
+```
+
+
+### Map plots
+
+#### Crime Rate in France 
+
+```{r}
+guerry %>%
+  ggplot(aes(fill=crime_pers)) + 
+  geom_sf(color="black") + 
+  viridis::scale_fill_viridis(option="c",direction = 1)+
+  labs(title="Crime Pers in France")+
+  theme_void(base_family = "Italic",
+             base_size = 12) 
+
+```
+
+
+#### Crime Rate in France - Spatial lags
+
+##### It's noticable that the data looks now like it's grouped (or clustered). It's because spatial lags are smoothed values since they are computed by taking into account all values from the neighbors for a particular local unit (and associated weights)
+
+
+```{r}
+crime_lags %>%
+  ggplot(aes(fill=crime_lag)) + 
+  geom_sf(color="black",lwd=0.1) + 
+  viridis::scale_fill_viridis(option="c",direction = 1,limits = range(data$crime_pers))+
+  labs(title="Crime Pers in France - Spatial lags")+
+  theme_void(base_family = "Italic",
+             base_size = 12) 
+
+```
+
+
+
+
+
+### Creating a linear model WITHOUT special dependence
+
+
+```{r}
+mod1 <- lm(data = guerry, formula = crime_pers ~ region + literacy + donations  + wealth + commerce + clergy + infanticide  + lottery + desertion  + prostitutes)
+```
+
+
+```{r}
+summary(mod1)
+```
+
+
+
+### Creating a linear model WITH spatial dependence
+
+
+
+```{r}
+nb2listw(nb)
+```
+
+#### Moran test for regression residuals
+
+##### H0: No spatial dependence in regression residuals
+##### Since p-value < 0.05, it should be concluded that there exists a spatial dependence within linear regression's residuals, which means that a spatial linear model would be better than "default" linear regression model
+
+
+```{r}
+lm.morantest(mod1,listw = nb2listw(nb))
+```
+
+
+```{r}
+lm.LMtests(mod1,nb2listw(nb) , test = "RSlag")
+```
+
+#### Formula
+
+##### The formula essentially means: Take the sum of multiplication of weights and Y values for each neighbor, scale with with Rho and add the X variables multiplied by their coefficients
+
+```{r,fig.width=6,fig.height=2}
+ggplot() + 
+    background_image(readPNG("images/spatial_lag_formula.png")) + 
+  labs(caption = "Source:https://web.sgh.waw.pl/~atoroj/ekonometria_przestrzenna/5_single_source_GIS_polygons_EN.pdf")
+```
+
+
+```{r}
+mod_spatial <- lagsarlm(formula = crime_pers ~ region + literacy + donations + wealth + 
+    commerce + clergy + infanticide + lottery + desertion + prostitutes, 
+    data = guerry,
+    listw = nb2listw(nb))
+```
+
+
+#### SAR spatial lag model summary
+
+```{r}
+summary(mod_spatial,Nagelkerke = TRUE)
+```
+
+
+##### Nagelkerke pseudo-R-squared is slighly higher than R^2 in the OLS model
+
+#### Model significance
+
+##### Based on the p-value (0.072341): the model is significant.
+
+
+
+##### Due to the feedback loop (global spatial lag was used), it is needed to compute the direct (the impact of a particular variable on the Y variable in a particular neighbor) and the indirect effect (the impact of a particular variable in the neighbors of a particular neighbor on the Y value of that neighbor)
+
+```{r}
+impacts(mod_spatial,listw = nb2listw(nb))
+```
+
+
+
+
