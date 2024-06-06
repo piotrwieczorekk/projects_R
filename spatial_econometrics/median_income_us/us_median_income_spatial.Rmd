@@ -1,0 +1,387 @@
+---
+title: "Predicting median income in USA with the usage of spatially lagged linear model"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+date: "2024-06-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=F,message = F)
+```
+
+
+```{r}
+rm(list=ls())
+```
+
+
+
+## Libraries
+
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(sf)
+library(sfdep)
+library(spdep)
+library(spatial)
+library(spatialreg)
+library(ggmap)
+library(mapproj)
+library(maps)
+library(readxl)
+library(scales)
+library(gridExtra)
+library(cowplot)
+library(png)
+library(ggpubr)
+```
+
+## Reading the data
+
+```{r}
+geo_data <- st_read("us_states_coordinates.json")
+```
+
+
+```{r}
+invalid_geometries <- geo_data %>% filter(!st_is_valid(.))
+invalid_geometries
+```
+```{r}
+# Attempt to make invalid geometries valid
+geo_data <- geo_data %>% mutate(geometry = st_make_valid(geometry))
+```
+
+
+
+```{r}
+geo_data$name
+```
+
+
+
+```{r}
+income_data <- read_excel("us_states_income.xlsx")
+```
+
+
+
+
+```{r}
+urban_data <- read_excel("us_urbanization.xlsx")
+density_data <- read_excel("us_density.xlsx")
+age_data <- read_excel("us_median_age.xlsx")
+degree_data <- read_excel("us_states_bachelor.xlsx")
+```
+
+
+```{r}
+urban_data <- urban_data %>%
+  mutate(urbanization = as.numeric(urbanization))
+
+density_data <- density_data %>%
+  mutate(population_density = as.numeric(population_density))
+
+age_data <- age_data %>%
+  mutate(median_age = as.numeric(median_age))
+
+degree_data <- degree_data %>%
+  mutate(population_over_25 = as.numeric(population_over_25))
+```
+
+
+```{r}
+income_data <- income_data %>%
+  inner_join(urban_data,by="us_state") %>% 
+  inner_join(density_data,by="us_state") %>% 
+  inner_join(age_data,by="us_state") %>% 
+  inner_join(degree_data,by="us_state")
+```
+
+
+
+```{r}
+income_data <- income_data %>%
+  rename("name"="us_state")
+
+income_data <- geo_data %>%
+  inner_join(income_data,by="name")
+```
+
+
+
+```{r}
+class(income_data)
+```
+
+
+## Creating neighbour list object
+
+
+```{r}
+nb <- st_contiguity(income_data)
+```
+
+
+```{r}
+nb
+```
+
+
+
+```{r}
+nb[1:3] #first observation has neighbors with observation 8,9,22,38 and so on..
+```
+
+## Compute spatial weights (row-standarized)
+
+#### Row-standarization means that each element in the weight matrix gets divided by the sum within each row
+
+```{r}
+wt <- st_weights(nb) #spatial weights (row standardized)
+```
+
+
+```{r}
+wt
+```
+
+## Spatial lag
+#### Spatial lag is computed as sum of multiplication of each neighbor row-standarized weight and its value for the variable of interest.
+
+```{r}
+x <- income_data$median_income
+```
+
+
+```{r}
+st_lag(x,nb,wt)
+```
+
+#### For example, let’s take a look on the spatial lag for the first observation in the data set:
+#### The first observation is Alabama, which has neighbors with indexes 8, 9, 22, 38 which are:
+* Florida 
+* Georgia
+* Mississippi
+* Tennessee
+
+#### Since Alabama has 4 neighbors, all of them will have the weight of 0.25 in the weight matrix
+#### These are the median incomes values for the neighbors:
+
+* Florida 65370 
+* Georgia 67630 
+* Mississippi 48610 
+* Tennessee 65380
+
+
+#### To calculate the spatial lag for Alabama, we will have to multiply the weights (all are equal to 0.25) with the median incomes
+
+```{r}
+ij <- nb[[1]]
+wij <- wt[[1]]
+xij <- x[ij]
+```
+
+```{r}
+ij #Neighbors indexes
+```
+
+```{r}
+wij #Weights 
+```
+
+```{r}
+xij #Median incomes in Florida, Georgia, Mississippi, Tennessee respectively
+```
+
+```{r}
+as.tibble(income_data) %>%
+  filter(name %in% c("Florida","Georgia","Mississippi","Tennessee")) %>%
+  select(c(name,median_income))
+```
+
+
+#### First spatial lag value
+
+```{r}
+sum(xij*wij) #Spatial lag value for Alabama
+```
+
+
+## Creating a data frame with neighbors, weights and spatial lag values
+
+
+```{r}
+income_lags <- income_data %>%
+  transmute(nb=st_contiguity(geometry),
+            wt = st_weights(nb),
+            income_lag = st_lag(median_income,nb,wt))
+```
+
+```{r}
+income_lags %>%
+  as_tibble() %>%
+  head()
+```
+
+
+
+## Comparing map plots - Median income in the US vs Spatially lagged median income in the US
+
+#### Note that the second plot (spatially lagged median income) is much more clustered as it should be
+
+```{r,fig.width=10,fig.height=8}
+ 
+
+plot1<- ggplot(income_data,aes(fill=median_income,
+                       label=median_income)) +
+  geom_sf()+
+ #geom_sf_label(fun.geometry = sf::st_centroid,size=3,fill="white") + 
+  scale_fill_gradient(name = "Median Income by US State", low = "#C4E1C4", high = "#008802") +
+  labs(title="Median Income in USA",
+       x="",
+       y="") +
+  theme(plot.title = element_text(size=20,color="black"),
+        legend.title = element_text(size=16,color="black"),
+        legend.text = element_text(size=16,color="black"),
+        legend.position = "bottom",
+        plot.caption=element_text(size=16),
+        text = element_text(family = "Times New Roman")) + theme_minimal()
+ 
+
+legend <- get_legend(plot1)
+
+plot2 <-income_lags %>%
+  ggplot(aes(fill=income_lag)) + 
+  geom_sf(color="black",lwd=0.1) + 
+ #geom_sf_label(fun.geometry = sf::st_centroid,size=3,fill="white") + 
+  scale_fill_gradient(name = "Median Income by US State", low = "#C4E1C4", high = "#008802",limits= range(income_data$median_income)) +
+  labs(title="Median Income in USA - Spatial lags",
+       x="",
+       y="") +
+  theme(plot.title = element_text(size=20,color="black"),
+        legend.title = element_text(size=16,color="black"),
+        legend.text = element_text(size=16,color="black"),
+        legend.position = "bottom",
+        plot.caption=element_text(size=16),
+        text = element_text(family = "Times New Roman")) + theme_minimal()
+
+  
+plot1 <- plot1 +theme(legend.position = "none")
+plot2 <- plot2 +theme(legend.position = "none")
+ 
+
+combined_plot <- plot_grid(plot1,plot2,ncol=1)
+
+final_plot <- plot_grid(
+  combined_plot, 
+  legend, 
+  ncol = 2,
+  rel_widths = c(2,1))
+
+
+print(final_plot)
+
+```
+
+
+## Creating a linear model WITHOUT special dependence
+
+
+```{r}
+income_data %>%
+  as_tibble() %>%
+  head()
+```
+
+
+```{r}
+mod1 <- lm(data = income_data, formula = median_income ~ urbanization + population_density + median_age  + population_over_25)
+```
+
+```{r}
+summary(mod1)
+```
+
+
+#### Population density is highly insignifant so let's remove this variable from the model
+
+
+```{r}
+mod1 <- lm(data = income_data, formula = median_income ~ urbanization + median_age  + population_over_25)
+```
+
+```{r}
+summary(mod1)
+```
+
+## Creating a linear model WITH spatial dependence
+
+#### Moran test for regression residuals
+#### H0: No spatial dependence in regression residuals
+#### Since p-value < 0.05, it should be concluded that there exists a spatial dependence within linear regression’s residuals, which means that a spatial linear model would be better than “default” linear regression model
+
+
+```{r}
+lm.morantest(mod1,listw = nb2listw(nb))
+```
+
+## Creating SAR spatial lag model 
+
+#### Formula
+
+
+```{r,fig.width=6,fig.height=2}
+ggplot() + 
+    background_image(readPNG("sar_formula.png")) + 
+  labs(caption = "Source:https://web.sgh.waw.pl/~atoroj/ekonometria_przestrzenna/5_single_source_GIS_polygons_EN.pdf")
+```
+
+##### The formula essentially means: Take the sum of multiplication of weights and Y values for each neighbor, scale with with Rho and add the X variables multiplied by their coefficients
+
+
+
+```{r}
+mod_spatial <- lagsarlm(formula = median_income ~ urbanization + median_age  + population_over_25,
+    data = income_data,
+    listw = nb2listw(nb))
+```
+
+
+```{r}
+summary(mod_spatial,Nagelkerke = TRUE)
+```
+#### Nagelkerke pseudo-R-squared is slighly higher than R^2 (0.81225 compared to 0.7757 in the OLS model)
+
+#### All variables in the SAR model are significant.
+
+## Direct and indirect effect
+
+
+#### Due to the feedback loop (global spatial lag was used), it is needed to compute the direct (the impact of a particular variable on the Y variable in a particular neighbor) and the indirect effect (the impact of a particular variable in the neighbors of a particular neighbor on the Y value of that neighbor)
+
+
+```{r}
+impacts(mod_spatial,listw = nb2listw(nb))
+```
+
+### Interpretation regarding the direct effect
+
+#### If urbanization increases by 1 unit, median income will increase by 135, holding other variables constant, in the same spatial unit.
+#### If median_age increases by 1 unit, median incomee will decrease by -1298.6780, holding other variables constant in the same spatial unit
+#### If population_over_25 (% of people being at least 25 years old with a bachelor's degree or higher) increases by 1 unit, median income will increase by 1542.0131
+
+
+### Interpretation regarding the indirect effect
+
+
+#### If urbanization increases by 1 unit, median income will increase by 42.37259 in neighboring units
+#### If median_age increases by 1 unit, median income will decrease by -406.92602 in neighboring units
+#### If population_over_25 (% of people being at least 25 years old with a bachelor's degree or higher) increases by 1 unit, median income will increase by 483.16896 in neighboring units
+
+
