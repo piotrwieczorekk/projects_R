@@ -4,8 +4,9 @@ author: "Piotr Wieczorek"
 date: "2023-12-07"
 output: 
   html_document: 
-    toc: yes
-    theme: lumen
+    toc: true
+    theme: united
+    toc_depth: 4
 ---
 
 ```{r setup, include=FALSE}
@@ -29,6 +30,7 @@ library(forecast)
 library(vars)
 library(Metrics)
 library(lmtest)
+library(ggfortify)
 ```
 
 ## Reading and cleaning the data
@@ -52,6 +54,11 @@ colnames(df) <- c("time",
 )
 ```
 
+
+### Variables explaination
+
+##### dwellings_planning_permission_granted is the dependent variable
+##### general_business_climate_index_construction, reference_interest_rate and inflation_rate are independent variables
 
 ```{r}
 head(df)
@@ -86,7 +93,7 @@ head(df)
 ```{r}
 ts_dwellings_planning_permission_granted <- ts(df$dwellings_planning_permission_granted,start=c(2000,1),frequency = 4)
 ts_general_business_climate_index_construction <- ts(df$general_business_climate_index_construction,start=c(2000,1),frequency = 4)
-#ts_reference_interest_rate <- ts(df$reference_interest_rate, start=c(2000,1),frequency = 4)
+ts_reference_interest_rate <- ts(df$reference_interest_rate, start=c(2000,1),frequency = 4)
 ts_inflation_rate <- ts(df$inflation_rate,start=c(2000,1),frequency = 4)
 ```
 
@@ -120,27 +127,79 @@ p2 <- df %>%
 
 p3<- df %>%
   ggplot(aes(x=time , y = inflation_rate)) + 
-  geom_line(lwd=1.4) + labs(y="",title = "Inflation Rate") + theme_minimal() +  th
+  geom_line(lwd=1.4) + labs(y="",title = "Inflation Rate (%)") + theme_minimal() +  th
 
-(p1+p2)/(p3)
+p4<- df %>%
+  ggplot(aes(x=time , y = reference_interest_rate)) + 
+  geom_line(lwd=1.4) + labs(y="",title = "Reference Interest Rate (%)") + theme_minimal() +  th
+
+(p1+p2)/(p3+p4)
 ```
-
 
 
 ### ADF tests
 
 
+##### All of the variables needed to be differenced of the first order in order to become stationary
+
 ```{r}
-adf.test(ts_dwellings_planning_permission_granted)
+adf_dwellings <- adf.test(ts_dwellings_planning_permission_granted)
+adf_construction <- adf.test(ts_general_business_climate_index_construction)
+adf_inflation <- adf.test(ts_inflation_rate)
+adf_reference_interest_rate <- adf.test(ts_reference_interest_rate)
+
+adf_dwellings_diff <- adf.test(diff(ts_dwellings_planning_permission_granted))
+adf_construction_diff <- adf.test(diff(ts_general_business_climate_index_construction))
+adf_inflation_diff <- adf.test(diff(ts_inflation_rate))
+adf_reference_interest_rate_diff <- adf.test(diff(ts_reference_interest_rate))
 ```
 
 
 ```{r}
-adf.test(ts_general_business_climate_index_construction)
-```
+adf_tests_data <- data.frame(DickeyFuller = numeric(),
+                             p_value = numeric(),
+                             variable_name = character(), 
+                             stringsAsFactors = FALSE)
 
-```{r}
-adf.test(ts_inflation_rate)
+
+adf_list <- list(adf_dwellings,
+                 adf_construction,
+                 adf_inflation,
+                 adf_reference_interest_rate,
+                 adf_dwellings_diff,
+                 adf_construction_diff,
+                 adf_inflation_diff,
+                 adf_reference_interest_rate_diff)
+
+
+variable_names <- c("adf_dwellings",
+                    "adf_construction",
+                    "adf_inflation",
+                    "adf_reference_interest_rate",
+                    "adf_dwellings_diff",
+                    "adf_construction_diff",
+                    "adf_inflation_diff",
+                    "adf_reference_interest_rate_diff")
+
+
+for (i in seq_along(adf_list)) {
+    test_result <- adf_list[[i]]
+    DickeyFuller <- test_result$statistic
+    p_value <- round(test_result$p.value,4)
+    variable_name <- variable_names[i]
+    
+   
+    output <- data.frame(DickeyFuller = DickeyFuller,
+                         p_value = p_value,
+                         variable_name = variable_name, 
+                         stringsAsFactors = FALSE)
+    
+
+    adf_tests_data <- rbind(adf_tests_data, output)
+}
+
+print(adf_tests_data)
+
 ```
 
 
@@ -149,8 +208,22 @@ adf.test(ts_inflation_rate)
 ### Binding times series data by columns
 
 ```{r}
-df2 <- cbind(ts_dwellings_planning_permission_granted,ts_general_business_climate_index_construction,ts_inflation_rate)
+ts_dwellings_diff <- diff(ts_dwellings_planning_permission_granted) 
+ts_construction_diff <- diff(ts_general_business_climate_index_construction)
+ts_inflation_diff <- diff(ts_inflation_rate)
+ts_reference_rate_diff <- diff(ts_reference_interest_rate)
 ```
+
+
+```{r}
+df2 <- cbind(ts_dwellings_diff,ts_construction_diff,ts_inflation_diff,ts_reference_rate_diff)
+```
+
+
+```{r}
+df2
+```
+
 
 
 ### Selecting optimal lag for the model
@@ -159,6 +232,7 @@ df2 <- cbind(ts_dwellings_planning_permission_granted,ts_general_business_climat
 ```{r}
 VARselect(df2,lag.max = 4)
 ```
+
 
 
 
@@ -172,87 +246,164 @@ estim <- VAR(df2,p=4,type="const")
 
 ### Summary
 
-```{r}
-summary(estim$varresult$ts_dwellings_planning_permission_granted)
-```
+##### The model captures ~58% of the variance of differenced dwellings permissions
 
-### Calculating MAE and MAPE
 
 ```{r}
-mod_res <- estim$varresult$ts_dwellings_planning_permission_granted$residuals
-mod_fit <- estim$varresult$ts_dwellings_planning_permission_granted$fitted.values
+summary(estim$varresult$ts_dwellings_diff)
 ```
 
-```{r}
-mean(abs(mod_res))
-```
 
-```{r}
-actual_values <- ts_dwellings_planning_permission_granted[5:95]
-predicted_values <- estim$varresult$ts_dwellings_planning_permission_granted$fitted.values
-```
 
-```{r}
-mae(actual_values,predicted_values)
-```
-```{r}
-mape(actual_values,predicted_values) #mozna policzyc mape dlatego ze w zadnym z actual_values nie ma 0
-```
 
 ### Casuality tests
 
+##### The grangertest from the lmtest library is essentially a Wald test for nested models.
+##### It checks, whether or not an autoregressive model, where the dependent variable is regressed on its past values is worse than a model where the dependent variable is regressed on its past values and past values of the other variable
 
-####  Pr(>F) < 0.05 implies that there is statistical evidence to support the idea that past values of ts_inflation_rate Granger cause ts_dwellings_planning_permission_granted.
+#####  Pr(>F) < 0.1 implies that there is statistical evidence to support the idea that past values of differenced inflation rate Granger cause differenced dwellings permissions 
 
 ```{r}
-lmtest::grangertest(ts_dwellings_planning_permission_granted~ts_inflation_rate,order=4)
+lmtest::grangertest(ts_dwellings_diff~ts_inflation_diff,order=4)
 ```
 
-####  Pr(>F) < 0.05 implies that there is statistical evidence to support the idea that past values of ts_general_business_climate_index_construction Granger cause ts_dwellings_planning_permission_granted.
+#####  Pr(>F) < 0.1 implies that there is statistical evidence to support the idea that past values of differenced construction climate index Granger cause differenced dwellings permissions
 
 
 ```{r}
-lmtest::grangertest(ts_dwellings_planning_permission_granted~ts_general_business_climate_index_construction,order=4)
+lmtest::grangertest(ts_dwellings_diff~ts_construction_diff,order=4)
+```
+
+#####  Pr(>F) < 0.1 implies that there is statistical evidence to support the idea that past values of differenced reference rate Granger cause differenced dwellings permissions
+
+```{r}
+lmtest::grangertest(ts_dwellings_diff~ts_reference_rate_diff,order=4)
 ```
 
 
 ### Forecast error variance decomposition
 
-#### Both inflation rate and general business climate index for construction have an impact on explaining forecast error of the ts_dwellings_planning_permission_granted variable
+##### Both differenced inflation rate and difference construction climate index have an impact on explaining forecast error of the differenced dwellings permissions variable. It increases with time, which is typical for variance decomposition
 
 
 ```{r,fig.width=10,fig.height=10}
-plot(fevd(estim, n.ahead =8))
+plot(fevd(estim, n.ahead =4))
 ```
 
 
 ### Impulse response function
 
 
-#### There is an increase of ts_dwellings_planning_permission_granted as a reaction to the sudden (positive) shock in ts_general_business_climate_index_construction
+##### There is a statistically signifcant decrease of differenced dwellings permissions as a reaction to the sudden (positive) shock in differenced inflation rate around the 4th quarter after the signal
 
 
 ```{r,fig.width=12,fig.height=8}
-plot(irf(estim,impulse="ts_general_business_climate_index_construction",response = "ts_dwellings_planning_permission_granted",n.ahead = 4),main="Reaction of ts_dwellings_planning_permission_granted on ts_general_business_climate_index_construction impulse",cex=1.25)
+set.seed(123)
+
+plot(irf(estim,impulse="ts_inflation_diff",response = "ts_dwellings_diff",n.ahead = 4),main="Reaction of differenced dwellings permission on differenced inflation rate impulse",cex=1.25,ylab="Differenced dwellings permissions")
 ```
 
 
-
-#### There is a decrease of ts_dwellings_planning_permission_granted as a reaction to the sudden (positive) shock in ts_inflation_rate
-
+##### There is a statistically signifcant increase of differenced dwellings permissions as a reaction to the sudden (positive) shock in differenced construction climate index between the first and the second quarter after the signal occured
 
 ```{r,fig.width=12,fig.height=8}
-plot(irf(estim,impulse="ts_inflation_rate",response = "ts_dwellings_planning_permission_granted",n.ahead = 4),main="Reaction of ts_dwellings_planning_permission_granted on ts_inflation_rate impulse",cex=1.25)
+set.seed(123)
+
+plot(irf(estim,impulse="ts_construction_diff",response = "ts_dwellings_diff",n.ahead = 4),main="Reaction of differenced dwellings permissions on impulse in differenced construction climate index",cex=1.25, ylab="Differenced dwellings permissions")
 ```
 
+##### There is a statistically signifcant increase of differenced dwellings permissions as a reaction to the sudden (positive) shock in differenced reference rate between the first and the second quarter after the signal occured and also a statistically significant decrease around the fourth quarter after the signal occured
+
+```{r,fig.width=12,fig.height=8}
+set.seed(123)
+
+plot(irf(estim,impulse="ts_reference_rate_diff",response = "ts_dwellings_diff",n.ahead = 4),main="Reaction of differenced dwellings permissions on differenced reference rate impulse",cex=1.25,ylab="Differenced dwellings permissions")
+```
+
+
+### Prediction for the next 4 periods
 
 
 ```{r,fig.width=10,fig.height=10}
-plot(predict(estim,n.ahead = 12))
+plot(predict(estim,n.ahead = 4))
+```
+
+```{r}
+forecast(estim,h=4)
+```
+
+### Residuals diagnostics
+
+```{r}
+var_residuals <- as.data.frame(estim[["varresult"]][["ts_dwellings_diff"]][["residuals"]])
+colnames(var_residuals)[1] <- "residuals"
+```
+
+
+##### Although the histogram and QQ-plot could indicate that the variable is not normally distributed, p-value from the shapiro-wilk test amounts to 0.4071
+
+
+```{r}
+var_residuals %>%
+  ggplot(aes(x=residuals)) + 
+  geom_histogram(color="black") + 
+  labs(y="Count",x="Residuals",title="VAR Model's Residuals") + 
+  theme_minimal()
+```
+
+
+```{r}
+qqnorm(var_residuals$residuals, pch = 1, frame = FALSE)
+qqline(var_residuals$residuals, col = "steelblue", lwd = 2)
+```
+
+```{r}
+shapiro.test(var_residuals$residuals)
 ```
 
 
 
+#### Residuals autocorrelation
+
+##### Based on the ACF Plot and Ljung-Box test, there is a strong evidence that there is no autocorrelation in the residuals
+
+
+```{r,fig.width=10,fig.height=6}
+acf(var_residuals$residuals,main="Residuals from the VAR Model - Autoregression")
+```
+
+```{r}
+stats::Box.test(estim[["varresult"]][["ts_dwellings_diff"]][["residuals"]],
+                type="Ljung-Box",lag = 4)
+```
+
+
+
+
+
+```{r}
+var_forecast <- forecast(estim,h=4)
+```
+
+
+```{r}
+var_forecast[['forecast']][['ts_dwellings_diff']]
+```
+
+
+### VAR Model Fitting the data
+
+```{r,fig.width=10,fig.height=6}
+fortify(var_forecast[["forecast"]][["ts_dwellings_diff"]]) %>%
+  mutate(Index = as.yearqtr(Index)) %>%
+  ggplot(aes(x=Index)) + 
+  geom_line(aes(y=Data,color="Data"),linewidth=2)+
+  geom_line(aes(y=Fitted,color="Fitted"),linewidth=2) +
+  scale_color_manual(name = "",
+                     values = c("Data" = "#FFFD6B","Fitted" = "#6FB270"),
+                     breaks=c("Data","Fitted")) + 
+  theme_minimal()
+```
 
 
 
