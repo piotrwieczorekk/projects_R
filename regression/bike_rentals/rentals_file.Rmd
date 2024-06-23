@@ -1,0 +1,506 @@
+---
+title: "Predicting bike rentals with linear and random forest regression"
+output: 
+  html_document: 
+    toc: true
+    toc_depth: 4
+    theme: united
+date: "2024-06-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=F,message=F)
+```
+
+
+```{r}
+rm(list=ls())
+```
+
+
+### Libraries
+
+
+```{r}
+library(tidyverse)
+library(caret)
+library(scales)
+library(MLmetrics)
+library(lubridate)
+library(scales)
+library(olsrr)
+library(car)
+library(randomForest)
+library(fastDummies)
+library(janitor)
+```
+
+## Reading and cleaning the data
+
+```{r}
+df <- read.csv('bikes.csv')
+```
+
+
+
+### Recoding variables
+
+
+```{r}
+df <- df %>%
+  mutate_if(is.integer,as.character) %>%
+  mutate(weather = dplyr::recode(weather, "1" = "Clear_or_partly_cloudy", "2" = "Light_precipitation", "3" ="Heavy_precipitation")) %>%
+  mutate(season = dplyr::recode(season, "1" = "Winter", "2" = "Spring", "3" = "Summer", "4" ="Fall")) %>%
+  mutate(holiday = dplyr::recode(holiday, "0" = "No", "1" = "Yes")) %>%
+  mutate(weekday = dplyr::recode(weekday, "0" = "Sunday", "1" = "Monday", "2" = "Tuesday", "3" = "Wednesday",
+                                 "4" = "Thursday", "5" = "Friday", "6" = "Saturday", "7" = "Sunday")) %>%
+  mutate(date = lubridate::ymd(date)) %>%
+  mutate_at(c(2:5),as.factor) %>%
+  mutate(rentals = as.numeric(rentals))
+```
+
+
+```{r}
+head(df)
+```
+
+
+
+```{r}
+df <- df %>%
+  mutate_if(is.numeric,~round(.x,2))
+```
+
+
+## Exploratory analysis
+
+### Relationship between bike rentals and other numeric variables
+
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  gather(c(6:9),key="key",value="val") %>%
+  select(c(6:8)) %>%
+  ggplot(aes(x=val,y=rentals)) + 
+  geom_point() + 
+  geom_smooth(method="lm",se=F)+
+  facet_wrap(~key,scales="free") +
+   theme_bw()
+```
+
+##### There is a strong linear relationship between bike rentals and temperature, realfeel and windspeed. The relationship between bike rentals and huminidity doesn't seem to follow any pattern.
+
+### Correlation between bike rentals and other numeric variables
+
+```{r}
+cor(df$rentals,df$temperature)
+cor(df$rentals,df$realfeel)
+cor(df$rentals,df$windspeed)
+cor(df$rentals,df$humidity)
+```
+
+
+```{r}
+df <- df %>%
+  mutate(season = factor(season, levels = c("Spring", "Summer", "Fall", "Winter")))
+```
+
+
+### Sum of bike rentals by season
+
+```{r}
+df_group_season <- df %>%
+  group_by(season) %>%
+  summarise(sum_rentals = sum(rentals))
+```
+
+
+
+```{r}
+df_group_season
+```
+
+
+
+
+```{r}
+df_group_season %>%
+  ggplot(aes(x=season,y=sum_rentals)) + 
+  geom_bar(stat="identity",fill="#EC755B") + 
+  labs(title="") + 
+  scale_y_continuous(label=comma, breaks = seq(0,1000000,200000))+
+  coord_flip() +
+  theme_bw()
+```
+
+
+##### The most bikes were rented during summer and the least during witner. It could be anticipated based on the positive linear relation between temperature and bike rentals
+
+
+```{r}
+df <- df %>%
+  mutate(weekday = factor(weekday, levels = c("Monday","Tuesday","Wednesday","Thursday", "Friday", "Saturday", "Sunday")))
+```
+
+
+### Bike rentals by weekday
+
+```{r}
+df %>%
+  ggplot(aes(x=weekday,y=rentals)) + 
+  geom_boxplot(fill="#EC755B") + 
+  scale_y_continuous(labels = scales::comma) + 
+  labs(title="Rentals by Weekday") +
+  theme_bw()
+```
+
+
+##### There doesn't seem to be any clear pattern. All of the medians are very close to each other.
+
+
+### Bike rentals by weather type
+
+```{r}
+df %>%
+  ggplot(aes(x=weather,y=rentals)) + 
+  geom_boxplot(fill="#EC755B") + 
+  scale_y_continuous(labels = scales::comma) + 
+  labs(title="Rentals by Weather Type") +
+  theme_bw()
+```
+
+##### There is a clear pattern. People tend to rent bikes when the weather is good
+
+
+```{r}
+df <- df %>%
+  select(-c(1))
+```
+
+## Modeling
+
+### Data partition
+
+
+```{r}
+set.seed(123)
+
+data_partition <- caret::createDataPartition(df$rentals, p = 0.6, list = F)
+
+train_set <- df[data_partition,]
+test_set <- df[-data_partition,]
+
+print(nrow(train_set))
+print(nrow(test_set))
+
+print(nrow(train_set)/nrow(df))
+```
+
+```{r}
+head(train_set)
+```
+
+
+### First linear model
+
+
+```{r}
+lm_mod <- lm(formula = rentals ~., data = train_set)
+```
+
+```{r}
+summary(lm_mod)
+```
+
+##### Some variables are not statistically significant. As it was noted before, the weekday variable doesn't seem to add anything to the model. Moreover, there most likely exists some collinearity because variables temperature and realfeel are based on each other. It's also seen in the variance inflation rate values that exceed 5.0 for both of these variables
+
+### Variance inflation rate
+
+```{r}
+vif(lm_mod)
+```
+
+### Durbin Watson test
+
+```{r}
+car::durbinWatsonTest(lm_mod)
+```
+
+
+##### There is however no autocorrelation of the residuals of the first order
+
+
+### Second linear model
+
+##### This model was evaluated with the usage of the stepwise backward regression
+
+```{r}
+lm_mod_backward_p <- olsrr::ols_step_backward_p(model = lm(formula = rentals ~., data = train_set),prem = 0.1,progress = F)
+```
+
+```{r}
+lm_mod_backward_p$metrics
+```
+
+##### The variables above were deleted from the model based on their p-value
+
+```{r}
+lm_mod_backward_p
+```
+
+
+##### The second model exhibits slighly higher adjusted R^2 and it's also less complicated
+
+
+##### The second model was transformed to the lm variable because it's easier to analyze such datatype
+
+
+```{r}
+lm_mod_backward_p <- lm(formula = rentals ~. -realfeel -weekday, data = train_set)
+```
+
+
+
+
+
+```{r}
+summary(lm_mod_backward_p)
+```
+
+
+##### Now all variables are statistically significant
+
+
+### Variance inflation rate
+
+```{r}
+vif(lm_mod_backward_p)
+```
+
+
+##### None of the values exceed 5.0 indicating that there is no collinearity between variables
+
+
+### Durbin Waton test
+
+```{r}
+car::durbinWatsonTest(lm_mod_backward_p)
+```
+
+##### There is no autocorrelation of the first order in the residuals
+
+
+### Residual vs fitted values plot
+
+
+```{r}
+olsrr::ols_plot_resid_fit(lm_mod_backward_p)
+```
+
+##### There is no pattern between fitted values and residuals, indicating that the model is stable
+
+
+### Cook's distances
+
+```{r}
+ols_plot_cooksd_chart(lm_mod_backward_p) 
+```
+
+
+```{r}
+round(4/(nrow(train_set)-ncol(train_set)-1),3) #4/(N−k−1) <- formula for Cook's Distance Threshold
+```
+
+##### A lot of observations exceeded the cook's distance threshold and it should be scrutinized
+
+
+```{r}
+cooks_indexes <- which(cooks.distance(lm_mod_backward_p) > 0.009)
+```
+
+```{r}
+cooks_indexes
+```
+
+
+### Summary of train data for the observations that exceeded cook's distance threshold
+
+```{r}
+summary(train_set[cooks_indexes,5:9])
+```
+
+
+### Summary of train data for the observations that didn't exceed cook's distance threshold
+
+
+```{r}
+summary(train_set[-cooks_indexes,5:9])
+```
+
+
+##### The observations that exceeded the cook's distance are essentially characterized by higher values of temperature, realfeel, humidity, windspeed but lower rentals (in terms of the average values)
+
+
+
+### Third model - stepwise backward regression without influential observations
+
+
+```{r}
+lm_mod_backward_p_without_cooks_indexes <- lm(data=train_set[-cooks_indexes,],
+                                              formula = rentals ~. -realfeel -weekday)
+```
+
+
+#### Summary
+
+
+```{r}
+summary(lm_mod_backward_p_without_cooks_indexes)
+```
+
+
+
+##### holidayYes is not statistically significant after removing influential observations
+
+
+#### Residual vs fitted values plot
+
+
+```{r}
+olsrr::ols_plot_resid_fit(lm_mod_backward_p_without_cooks_indexes)
+```
+
+##### There is no pattern between fitted values and residuals 
+
+
+#### Variance inflation rate
+
+
+```{r}
+vif(lm_mod_backward_p_without_cooks_indexes)
+```
+
+##### None of the variables' GVIF^(1/(2*Df)) exceeded 5.0
+
+
+
+#### Durbin Watson test
+```{r}
+car::durbinWatsonTest(lm_mod_backward_p_without_cooks_indexes)
+```
+
+
+##### There is no autocorrelation of the first order in the residuals
+
+
+### Using the third model to predict test data
+
+
+```{r}
+test_predictions <- predict(lm_mod_backward_p_without_cooks_indexes, test_set)
+```
+
+
+
+#### MAE, MAPE, MSE metrics
+
+
+```{r}
+MLmetrics::MAE(test_predictions, test_set$rentals)
+```
+
+```{r}
+MLmetrics::MAPE(test_predictions,test_set$rentals)
+```
+```{r}
+MLmetrics::MSE(test_predictions,test_set$rentals)
+```
+
+##### The results indicate that the model didn't perfom really well on the test set. The model was wrong by 1106.77 on average and it's mean absolute percentage error was equal to 32.26%. It's mean squared error amounted to 1701716.
+
+
+##### As alternative to linear regression, random forest model was implemented to see if it can improve the above metrics
+
+
+### Random forest regression model
+
+
+#### Coding dummy variables
+
+
+```{r}
+train_dummies <-fastDummies::dummy_cols(train_set[,c(1:4)], remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+
+train_dummies <- cbind(train_dummies,train_set[,-c(1:4)])
+
+test_dummies <- fastDummies::dummy_cols(test_set[,c(1:4)],remove_first_dummy = TRUE, remove_selected_columns = TRUE)
+
+test_dummies <- cbind(test_dummies,test_set[,-c(1:4)])
+
+train_dummies <- janitor::clean_names(train_dummies)
+test_dummies <- janitor::clean_names(test_dummies)
+
+```
+
+```{r}
+head(train_dummies)
+```
+
+```{r}
+head(test_dummies)
+```
+
+#### Model formula
+
+
+```{r}
+rf_mod1 <- randomForest::randomForest(rentals ~. -realfeel -weekday_tuesday -weekday_wednesday -weekday_thursday -weekday_friday -weekday_saturday -weekday_sunday,
+                                      ntree=200,
+                                      importance=TRUE,
+                                      data=train_dummies[-cooks_indexes,],
+                                      mtry = 4)
+```
+
+
+
+
+
+
+```{r}
+rf_mod1
+```
+
+
+```{r}
+plot(rf_mod1)
+```
+
+#### Variance importance plot
+
+
+```{r}
+varImpPlot(rf_mod1,type=1)
+```
+
+
+##### All of the variables are important because removing any variable would increase the MSE metric
+
+
+#### MAE, MAPE and MSE metrics
+
+```{r}
+print(paste("MAE:",MLmetrics::MAE(y_pred = predict(rf_mod1,test_dummies),y_true = test_dummies$rentals)))
+```
+
+```{r}
+print(paste("MAPE:",MLmetrics::MAPE(y_pred=predict(rf_mod1,test_dummies),y_true=test_dummies$rentals)))
+```
+
+
+```{r}
+print(paste("MSE:",MLmetrics::MSE(y_pred=predict(rf_mod1,test_dummies),y_true=test_dummies$rentals)))
+```
+
+
+##### The values are slightly better than the third model (linear regression with stepwise backward regression and without influential observations)
+
