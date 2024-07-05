@@ -1,0 +1,308 @@
+---
+title: "Using the Holt-Winters model to predict the number of dwellings put into service in Poland"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+date: "2024-07-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=F,message = F)
+```
+
+
+
+## Libraries
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(scales)
+library(tseries)
+library(forecast)
+library(MLmetrics)
+library(gridExtra)
+library(Metrics)
+library(ggthemr)
+library(png)
+library(ggpubr)
+library(kableExtra)
+```
+
+
+## Reading and cleaning the data
+
+
+```{r}
+df <- read_excel("dwellings.xlsx")
+```
+
+
+```{r}
+df <- df %>%
+  mutate_at(c(1,2),~as.numeric(.x)) %>%
+  mutate(dwellings = str_remove_all(dwellings," ")) %>%
+  mutate_at(3,~as.numeric(.x)) %>%
+  mutate(whole_date = str_c(year,month,sep="-")) %>%
+  mutate(whole_date = lubridate::ym(whole_date))
+```
+
+
+```{r}
+head(df) %>%
+  kable(align = "c") %>%
+  kable_styling(position = "center")
+```
+
+```{r}
+df <- df %>%
+  dplyr::select(-c(1:2)) %>%
+  dplyr::select(c(2,1))
+```
+
+
+```{r}
+ggthemr(palette="fresh")
+```
+
+
+## Exploratory analysis
+
+
+### Plotting the data - dwellings put into service
+
+#### The chart shows that the number of housing units completed grew relatively steadily from 2010 to 2013, while it grew rapidly from 2014 to 2022. There was a significant decline in 2023 compared to 2022. These declines continue in 2024
+
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  ggplot(aes(x=whole_date,y=dwellings)) +
+  geom_line() + 
+  geom_point()+
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y-%m",expand = c(0.05,0)) + 
+  scale_y_continuous(label=comma) + 
+  labs(x="",y="",title="Dwellings Put Into Service") 
+```
+
+
+### Exploring seasonality
+
+#### The chart shows that more housing units are completed in the months of October-December than in other months. Fewer apartments are put into use in the months of February, May, June, compared to the other months
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  mutate(date_month = month(whole_date)) %>%
+  mutate(date_month = as.factor(date_month)) %>%
+  ggplot(aes(x=date_month,y=dwellings)) + 
+  geom_boxplot(alpha=0.25) + 
+  geom_jitter(position =  position_jitter(width=0.1),size=2) +
+  scale_y_continuous(label=comma)+
+  labs(x="Month",y="",title="Dwellings Put Into Service - Seasonality")+
+  theme_minimal()
+```
+
+
+### Median of housing units put into service by month
+
+
+```{r,fig.width=10,fig.height=6}
+df %>%
+  mutate(date_month = month(whole_date))%>%
+  mutate(date_month = as.factor(date_month)) %>%
+  group_by(date_month) %>%
+  summarise(median_dwellings = median(dwellings)) %>%
+  ggplot(aes(x=date_month,y=median_dwellings)) + 
+  geom_bar(stat="identity") + 
+  scale_y_continuous(label=comma)+
+  geom_text(aes(label=median_dwellings),vjust=-0.2)+
+  labs(x="Month",y="Median",title="Dwellings Put Into Service - Median Values for Each Month") + 
+  theme_minimal() 
+```
+
+
+## Modeling part
+
+
+### Changing data format from data frame to ts (time series)
+
+
+```{r}
+df_ts <- ts(df$dwellings,start = c(2010,1),end = c(2024,5),frequency = 12)
+```
+
+
+```{r}
+df_ts
+```
+
+
+```{r}
+length(df_ts) == length(df$whole_date)
+```
+
+
+### Decomposing the time series
+
+
+```{r}
+fit <- decompose(df_ts,type = "multiplicative")
+```
+
+
+
+#### There is evidence of strong seasonality in the data. The trend is overall positive, but for recent periods it has been negative
+
+
+```{r,fig.width=10,fig.height=6}
+autoplot(fit)
+```
+
+### ACF 
+
+
+#### The ACF plot suggests strong autocorrelation within the time series data
+
+
+```{r,fig.width=10,fig.height=6}
+acf(df_ts,xlab="Lag order",ylab="ACF",main="ACF Plot")
+```
+
+### PACF
+
+#### The PACF plot suggests strong autocorrelation within the time series data
+
+```{r,fig.width=10,fig.height=6}
+pacf(df_ts,xlab="Lag order",ylab="PACF",main = "PACF Plot")
+```
+
+
+### Model formula
+
+```{r}
+holt_winter_mod <- hw(df_ts, seasonal = "multiplicative",h=12,damped = T,exponential = F)
+```
+
+
+### Residuals
+
+```{r,fig.width=10,fig.height=6}
+checkresiduals(holt_winter_mod) 
+```
+
+#### There is no evidence of residuals' autocorrelation
+
+
+### Evaluation metrics
+
+
+
+#### The model is wrong by ~1047 on average
+
+
+```{r}
+round(MLmetrics::MAE(y_pred = holt_winter_mod$fitted, y_true = holt_winter_mod$x),4) #mean absolute error
+```
+
+
+
+#### The model is wrong by ~7% on average
+
+```{r} 
+round(MLmetrics::MAPE(y_pred = holt_winter_mod$fitted, y_true = holt_winter_mod$x),6) #mean absolute percentage error
+```
+
+
+```{r}
+round(MLmetrics::RMSE(y_pred = holt_winter_mod$fitted, y_true = holt_winter_mod$x),4) #root mean squared error
+```
+
+
+#### Mean absolute scaled error
+
+#### It is the mean absolute error of the forecast values, divided by the mean absolute error of the in-sample one-step naive forecast. If the value is less than 0 it indicates that the model is better than a naive model
+
+
+
+```{r,fig.width=4,fig.height=1}
+ggplot() + 
+    background_image(readPNG("images/mase_formula.png"))
+```
+
+
+
+```{r}
+round(Metrics::mase(actual = holt_winter_mod$x, predicted = holt_winter_mod$fitted),4) #mean absolute scaled error
+```
+
+```{r}
+library(ggfortify)
+```
+
+
+```{r}
+head(fortify(holt_winter_mod)) %>%
+  kable(align = "c") %>%
+  kable_styling(position = "center")
+```
+
+
+### Plotting the model's fitness
+
+```{r,fig.width=10,fig.height=6}
+fortify(holt_winter_mod) %>%
+  ggplot(aes(x=Index)) + 
+  geom_line(aes(y=Data,color="Original Data"),linewidth=1.2) + 
+  geom_line(aes(y=Fitted,color = "Fitted Data"),linewidth=1.2) + 
+  scale_color_manual(name = "",
+                     values = c("Original Data" = "#65ADC2","Fitted Data" = "#9DD297"),
+                     breaks=c("Original Data","Fitted Data")) +
+  labs(color="Components", x = "Year", y="", title="Fitting the Holt-Winters model") + 
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y",limits=c(as.Date("2010-01-01"),as.Date("2024-05-01"))) + 
+  scale_y_continuous(label=comma) +
+  theme(legend.position = "bottom")
+  
+```
+
+
+### Plotting prediction of the model
+
+
+```{r,fig.width=10,fig.height=6}
+fortify(holt_winter_mod) %>%
+  ggplot(aes(x=Index)) + 
+  geom_line(aes(y=Data,color="Original Data"),linewidth=1.2) + 
+  geom_line(aes(y=`Point Forecast`,color = "Forecasted Data"),linewidth=1.2) + 
+  geom_line(aes(y=`Lo 95`,color = "Lower 95% CI"),linewidth=1.2) +
+  geom_line(aes(y=`Hi 95`,color = "Higher 95% CI"),linewidth=1.2) +
+  scale_color_manual(name = "",
+                     values = c("Original Data" = "#65ADC2",
+                                "Forecasted Data" = "#9DD297",
+                                "Lower 95% CI" = "#BABABA",
+                                "Higher 95% CI" = "#BABABA"),
+                     breaks=c("Original Data",
+                              "Forecasted Data",
+                              "Lower 95% CI",
+                              "Higher 95% CI")) +
+  labs(color="Components", x = "Year", y="", title="Prediction of the Holt-Winters model") + 
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")+
+  scale_y_continuous(label=comma) +
+  theme(legend.position = "bottom")
+```
+
+### Tabular forecast
+
+```{r}
+fortify(holt_winter_mod) %>%
+  filter(Index >= as.Date("2024-06-01	")) %>%
+  dplyr::select(c(1,4)) %>%
+  kable(align = "c") %>%
+  kable_styling(position = "center")
+```
+
+
+
+
+
